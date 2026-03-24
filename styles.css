@@ -622,6 +622,46 @@ body {
   margin-bottom: 14px;
   color: var(--text);
 }
+.form-chart-section {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px 16px 10px;
+  margin-bottom: 14px;
+}
+.form-chart-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.form-chart-label {
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--blue);
+}
+.stat-toggle { display: flex; gap: 4px; }
+.stat-btn {
+  background: var(--bg4);
+  border: 1px solid var(--border2);
+  color: var(--text3);
+  font-family: var(--font-m);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  padding: 4px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.stat-btn:hover { color: var(--text2); }
+.stat-btn.active {
+  background: rgba(212,245,60,0.12);
+  border-color: rgba(212,245,60,0.4);
+  color: var(--lime);
+  text-shadow: var(--glow-lime-s);
+}
+.form-games-list { display: flex; flex-direction: column; gap: 8px; }
 .form-game {
   background: linear-gradient(135deg, var(--bg2), var(--bg3));
   border: 1px solid var(--border);

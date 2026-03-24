@@ -2,6 +2,7 @@
    PLAYIQ — app.js
    Deep Game Analysis Engine
 ═══════════════════════════════════════════════════════════ */
+/* global Chart */
 
 /* ── STATE ──────────────────────────────────────────────── */
 const S = {
@@ -215,11 +216,15 @@ async function startAnalysis(gameInfo) {
     setStep(1);
     const injuries = await fetchInjuries(gameInfo);
 
-    // Step 3 — Last 5 games
+    // Step 3 — Last 10 games + player stats
     setStep(2);
-    const [awayForm, homeForm] = await Promise.all([
+    const [awayFormRaw, homeFormRaw] = await Promise.all([
       fetchTeamForm(gameInfo.sportKey, gameInfo.awayTeamId),
       fetchTeamForm(gameInfo.sportKey, gameInfo.homeTeamId),
+    ]);
+    const [awayForm, homeForm] = await Promise.all([
+      enrichFormWithPlayerStats(gameInfo.sportKey, gameInfo.awayTeamId, awayFormRaw),
+      enrichFormWithPlayerStats(gameInfo.sportKey, gameInfo.homeTeamId, homeFormRaw),
     ]);
 
     // Step 4 — H2H
@@ -381,9 +386,9 @@ async function fetchTeamForm(sportKey, teamId) {
   if (!data?.events) return [];
 
   const completed = data.events.filter(e => e.competitions?.[0]?.status?.type?.completed);
-  const last5 = completed.slice(-5);
+  const last10 = completed.slice(-10);
 
-  return last5.map(ev => {
+  return last10.map(ev => {
     const comp = ev.competitions[0];
     const isHome = comp.competitors?.find(c => c.homeAway === 'home')?.team?.id === teamId;
     const mine = comp.competitors?.find(c => c.team?.id === teamId);
@@ -393,6 +398,7 @@ async function fetchTeamForm(sportKey, teamId) {
     const oppScore = parseScore(opp?.score);
     const result = mine?.winner === true ? 'W' : mine?.winner === false ? 'L' : myScore > oppScore ? 'W' : myScore < oppScore ? 'L' : 'T';
     return {
+      eventId: ev.id,
       result,
       opponent: opp?.team?.abbreviation || '?',
       myScore,
@@ -400,6 +406,52 @@ async function fetchTeamForm(sportKey, teamId) {
       home: isHome,
       date: new Date(ev.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
     };
+  });
+}
+
+/* ── PLAYER STATS PER GAME ──────────────────────────────── */
+async function enrichFormWithPlayerStats(sportKey, teamId, formGames) {
+  const sp = SPORTS.find(s => s.key === sportKey);
+  if (!sp) return formGames;
+
+  const summaries = await Promise.all(
+    formGames.map(g => g.eventId
+      ? espn(`https://site.api.espn.com/apis/site/v2/sports/${sp.sport}/${sp.league}/summary?event=${g.eventId}`)
+      : Promise.resolve(null)
+    )
+  );
+
+  return formGames.map((g, i) => {
+    const summary = summaries[i];
+    if (!summary) return { ...g, player: null };
+
+    const teamPlayers = summary.boxscore?.players?.find(p => p.team?.id === teamId);
+    if (!teamPlayers) return { ...g, player: null };
+
+    const statsGroup = teamPlayers.statistics?.[0];
+    if (!statsGroup) return { ...g, player: null };
+
+    const labels = statsGroup.labels || [];
+    const ptsIdx = labels.indexOf('PTS');
+    const rebIdx = labels.indexOf('REB');
+    const astIdx = labels.indexOf('AST');
+    if (ptsIdx === -1) return { ...g, player: null };
+
+    let topPlayer = null;
+    let maxPts = -1;
+    for (const athlete of statsGroup.athletes || []) {
+      const pts = parseInt(athlete.stats?.[ptsIdx] || 0);
+      if (pts > maxPts) {
+        maxPts = pts;
+        topPlayer = {
+          name: athlete.athlete?.shortName || athlete.athlete?.displayName || '?',
+          pts: parseInt(athlete.stats?.[ptsIdx] || 0),
+          reb: rebIdx > -1 ? parseInt(athlete.stats?.[rebIdx] || 0) : 0,
+          ast: astIdx > -1 ? parseInt(athlete.stats?.[astIdx] || 0) : 0,
+        };
+      }
+    }
+    return { ...g, player: topPlayer };
   });
 }
 
@@ -535,7 +587,7 @@ function renderOverview({ gameInfo, awayForm, homeForm }) {
       <div class="team-name">${abbr}</div>
       <div class="team-record">${team}</div>
       <div class="team-stat-row">
-        <div class="team-stat-item"><span class="tsi-label">Last 5</span><span class="tsi-val">${wins}-${5-wins}</span></div>
+        <div class="team-stat-item"><span class="tsi-label">Last ${form.length}</span><span class="tsi-val">${wins}-${form.length - wins}</span></div>
         <div class="team-stat-item"><span class="tsi-label">Streak</span><span class="tsi-val">${streak}</span></div>
         <div class="team-stat-item"><span class="tsi-label">Avg Score</span><span class="tsi-val">${avgScore(form)}</span></div>
         <div class="team-stat-item"><span class="tsi-label">Avg Allowed</span><span class="tsi-val">${avgAllowed(form)}</span></div>
@@ -643,24 +695,128 @@ function renderRoster({ gameInfo, awayRoster, homeRoster }) {
 
 /* ── FORM ───────────────────────────────────────────────── */
 function renderForm({ gameInfo, awayForm, homeForm }) {
-  const formBlock = (teamName, form) => `
+  const hasPlayerData = (form) => form.some(g => g.player);
+
+  const formBlock = (teamName, form, chartId) => `
     <div class="form-team-block">
       <h3>${teamName}</h3>
-      ${form.length === 0 ? '<p class="empty-msg">No recent games found</p>' :
-        form.map(g => `
-          <div class="form-game">
-            <div class="form-result ${g.result}">${g.result}</div>
-            <div class="form-details">
-              <div class="form-matchup">${g.home ? 'vs' : '@'} ${g.opponent}</div>
-              <div class="form-score">${g.myScore} – ${g.oppScore}</div>
-            </div>
-            <span class="form-date">${g.date}</span>
-          </div>`).join('')}
+      ${hasPlayerData(form) ? `
+      <div class="form-chart-section">
+        <div class="form-chart-controls">
+          <span class="form-chart-label">Player of the Game</span>
+          <div class="stat-toggle">
+            <button class="stat-btn active" onclick="switchFormStat('${chartId}', 'pts', this)">PTS</button>
+            <button class="stat-btn" onclick="switchFormStat('${chartId}', 'reb', this)">REB</button>
+            <button class="stat-btn" onclick="switchFormStat('${chartId}', 'ast', this)">AST</button>
+          </div>
+        </div>
+        <canvas id="${chartId}" height="150"></canvas>
+      </div>` : ''}
+      <div class="form-games-list">
+        ${form.length === 0 ? '<p class="empty-msg">No recent games found</p>' :
+          form.map(g => `
+            <div class="form-game">
+              <div class="form-result ${g.result}">${g.result}</div>
+              <div class="form-details">
+                <div class="form-matchup">${g.home ? 'vs' : '@'} ${g.opponent}</div>
+                <div class="form-score">${g.myScore} – ${g.oppScore}${g.player ? ` · <span style="color:var(--lime);opacity:0.8">${g.player.name} ${g.player.pts}pts</span>` : ''}</div>
+              </div>
+              <span class="form-date">${g.date}</span>
+            </div>`).join('')}
+      </div>
     </div>`;
 
   document.getElementById('formGrid').innerHTML =
-    formBlock(gameInfo.awayFull, awayForm) +
-    formBlock(gameInfo.homeFull, homeForm);
+    formBlock(gameInfo.awayFull, awayForm, 'formChartAway') +
+    formBlock(gameInfo.homeFull, homeForm, 'formChartHome');
+
+  setTimeout(() => {
+    if (hasPlayerData(awayForm)) renderFormChart('formChartAway', awayForm, 'pts');
+    if (hasPlayerData(homeForm)) renderFormChart('formChartHome', homeForm, 'pts');
+  }, 50);
+}
+
+function renderFormChart(chartId, games, stat) {
+  const ctx = document.getElementById(chartId);
+  if (!ctx) return;
+  if (S.charts[chartId]) S.charts[chartId].destroy();
+
+  const labels = games.map(g => `${g.home ? 'vs' : '@'}${g.opponent}`);
+  const values = games.map(g => g.player?.[stat] ?? 0);
+  const colors = games.map(g =>
+    g.result === 'W' ? 'rgba(35,209,139,0.82)' : 'rgba(255,61,90,0.82)'
+  );
+  const avg = values.length ? values.reduce((s, v) => s + v, 0) / values.length : 0;
+
+  S.charts[chartId] = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        {
+          data: values,
+          backgroundColor: colors,
+          borderRadius: 5,
+          borderSkipped: false,
+        },
+        {
+          type: 'line',
+          data: new Array(values.length).fill(parseFloat(avg.toFixed(1))),
+          borderColor: 'rgba(255,255,255,0.22)',
+          borderWidth: 1.5,
+          borderDash: [5, 4],
+          pointRadius: 0,
+          fill: false,
+          tension: 0,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            title: (items) => {
+              const g = games[items[0].dataIndex];
+              return `${g.home ? 'vs' : '@'}${g.opponent} — ${g.result} (${g.myScore}-${g.oppScore})`;
+            },
+            label: (item) => {
+              const g = games[item.dataIndex];
+              if (!g.player) return `${item.raw} ${stat.toUpperCase()}`;
+              return `${g.player.name}: ${g.player.pts} PTS · ${g.player.reb} REB · ${g.player.ast} AST`;
+            },
+          },
+          backgroundColor: 'rgba(13,13,18,0.95)',
+          borderColor: 'rgba(255,255,255,0.1)',
+          borderWidth: 1,
+          titleColor: '#f0f0fa',
+          bodyColor: '#b8bce8',
+          padding: 10,
+        },
+      },
+      scales: {
+        x: {
+          ticks: { color: '#8888b0', font: { family: 'IBM Plex Mono', size: 10 } },
+          grid: { display: false },
+          border: { display: false },
+        },
+        y: {
+          ticks: { color: '#8888b0', font: { family: 'IBM Plex Mono', size: 10 }, stepSize: 5 },
+          grid: { color: 'rgba(255,255,255,0.04)' },
+          border: { display: false },
+          beginAtZero: true,
+        },
+      },
+    },
+  });
+}
+
+function switchFormStat(chartId, stat, btn) {
+  btn.closest('.stat-toggle').querySelectorAll('.stat-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  const form = chartId === 'formChartAway' ? S.gameData.awayForm : S.gameData.homeForm;
+  renderFormChart(chartId, form, stat);
 }
 
 /* ── H2H ────────────────────────────────────────────────── */
