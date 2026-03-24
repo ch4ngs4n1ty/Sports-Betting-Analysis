@@ -61,9 +61,12 @@ async function loadDashboard() {
 
   S.allGames = [];
 
+  // Use today's date in ET so ESPN returns the correct day's slate
+  const todayET = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' }).replace(/-/g, '');
+
   const results = await Promise.all(
     SPORTS.map(sp =>
-      espn(`https://site.api.espn.com/apis/site/v2/sports/${sp.sport}/${sp.league}/scoreboard`)
+      espn(`https://site.api.espn.com/apis/site/v2/sports/${sp.sport}/${sp.league}/scoreboard?dates=${todayET}`)
         .then(data => ({ sp, events: data?.events || [] }))
     )
   );
