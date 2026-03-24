@@ -2,7 +2,7 @@
   "name": "PlayIQ — Deep Game Analysis",
   "short_name": "PlayIQ",
   "description": "AI-powered sports betting intelligence dashboard",
-  "start_url": "/Sports-Betting-Analysis/",
+  "start_url": "./index.html",
   "scope": "/Sports-Betting-Analysis/",
   "display": "standalone",
   "background_color": "#06060a",
