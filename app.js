@@ -995,8 +995,8 @@ function renderH2H({ gameInfo, h2h }) {
     return;
   }
 
-  const awayWins = h2h.filter(g => g.winner === 'away' && g.awayTeam === gameInfo.awayAbbr).length;
-  const homeWins = h2h.length - awayWins;
+  const awayWins = h2h.filter(g => g.winnerAbbr === gameInfo.awayAbbr).length;
+  const homeWins = h2h.filter(g => g.winnerAbbr === gameInfo.homeAbbr).length;
   const hasLeaders = h2h.some(g => g.awayLeader || g.homeLeader);
 
   const leaderBlock = (leader, teamId) => {
