@@ -12,6 +12,15 @@ const S = {
   charts: {},       // chart instances
 };
 
+/* ── TEAM LOGO URL ──────────────────────────────────────── */
+function teamLogoUrl(league, abbr, teamId) {
+  const proLeagues = ['nba', 'nfl', 'mlb', 'nhl'];
+  if (proLeagues.includes(league)) {
+    return `https://a.espncdn.com/i/teamlogos/${league}/500-dark/${abbr.toLowerCase()}.png`;
+  }
+  return `https://a.espncdn.com/i/teamlogos/ncaa/500/${teamId}.png`;
+}
+
 /* ── ESPN SPORT MAP ─────────────────────────────────────── */
 const SPORTS = [
   { key: 'nba', sport: 'basketball', league: 'nba',    label: 'NBA' },
@@ -96,6 +105,8 @@ function renderDashboard(results) {
           overUnder: odds?.overUnder,
           awayMoneyline: odds?.awayTeamOdds?.moneyLine,
           homeMoneyline: odds?.homeTeamOdds?.moneyLine,
+          awayLogo: teamLogoUrl(sp.league, away.team.abbreviation, away.team.id),
+          homeLogo: teamLogoUrl(sp.league, home.team.abbreviation, home.team.id),
         };
 
         S.allGames.push(gameInfo);
@@ -152,6 +163,7 @@ function renderGameCard(g, idx) {
       <div class="card-top">${statusBadge}</div>
       <div class="card-teams">
         <div class="card-team">
+          ${g.awayLogo ? `<img class="card-logo" src="${g.awayLogo}" alt="${g.awayAbbr}" onerror="this.style.display='none'">` : ''}
           <span class="card-abbr ${awayLeading ? 'leading' : ''}">${g.awayAbbr}</span>
           <span class="card-name">${g.awayFull}</span>
         </div>
@@ -161,6 +173,7 @@ function renderGameCard(g, idx) {
           <span class="${homeLeading ? 'score-lead' : 'score-val'}">${homeScore}</span>
         </div>` : `<div class="card-vs">VS</div>`}
         <div class="card-team right">
+          ${g.homeLogo ? `<img class="card-logo" src="${g.homeLogo}" alt="${g.homeAbbr}" onerror="this.style.display='none'">` : ''}
           <span class="card-abbr ${homeLeading ? 'leading' : ''}">${g.homeAbbr}</span>
           <span class="card-name">${g.homeFull}</span>
         </div>
@@ -207,7 +220,12 @@ async function startAnalysis(gameInfo) {
     // Step 1 — Game header
     setStep(0);
     document.getElementById('gameSport').textContent = gameInfo.sportLabel;
-    document.getElementById('gameTitle').textContent = `${gameInfo.awayAbbr} vs ${gameInfo.homeAbbr}`;
+    document.getElementById('gameTitle').innerHTML =
+      `${gameInfo.awayLogo ? `<img class="header-logo" src="${gameInfo.awayLogo}" alt="${gameInfo.awayAbbr}" onerror="this.style.display='none'">` : ''}
+      ${gameInfo.awayAbbr}
+      <span style="color:var(--text3);font-size:0.6em;margin:0 8px">VS</span>
+      ${gameInfo.homeAbbr}
+      ${gameInfo.homeLogo ? `<img class="header-logo" src="${gameInfo.homeLogo}" alt="${gameInfo.homeAbbr}" onerror="this.style.display='none'">` : ''}`;
     document.getElementById('gameMeta').textContent =
       `${gameInfo.awayFull} vs ${gameInfo.homeFull} · ${gameInfo.venue || ''} · ${gameInfo.statusText}`;
     renderOddsStrip(gameInfo);
@@ -437,21 +455,21 @@ async function enrichFormWithPlayerStats(sportKey, teamId, formGames) {
     const astIdx = labels.indexOf('AST');
     if (ptsIdx === -1) return { ...g, player: null };
 
-    let topPlayer = null;
-    let maxPts = -1;
-    for (const athlete of statsGroup.athletes || []) {
-      const pts = parseInt(athlete.stats?.[ptsIdx] || 0);
-      if (pts > maxPts) {
-        maxPts = pts;
-        topPlayer = {
-          name: athlete.athlete?.shortName || athlete.athlete?.displayName || '?',
-          pts: parseInt(athlete.stats?.[ptsIdx] || 0),
-          reb: rebIdx > -1 ? parseInt(athlete.stats?.[rebIdx] || 0) : 0,
-          ast: astIdx > -1 ? parseInt(athlete.stats?.[astIdx] || 0) : 0,
-        };
+    const athletes = statsGroup.athletes || [];
+    const findLeader = (idx) => {
+      if (idx === -1) return null;
+      let best = null, max = -1;
+      for (const athlete of athletes) {
+        const val = parseInt(athlete.stats?.[idx] || 0);
+        if (val > max) {
+          max = val;
+          best = { name: athlete.athlete?.shortName || athlete.athlete?.displayName || '?', value: val };
+        }
       }
-    }
-    return { ...g, player: topPlayer };
+      return best;
+    };
+
+    return { ...g, player: { pts: findLeader(ptsIdx), reb: findLeader(rebIdx), ast: findLeader(astIdx) } };
   });
 }
 
@@ -517,32 +535,40 @@ async function fetchH2H(gameInfo) {
     const parseScore = (s) => parseInt(s?.displayValue ?? s ?? 0) || 0;
     const awayScore = parseScore(awayC?.score);
     const homeScore = parseScore(homeC?.score);
-    const winner = awayC?.winner === true ? 'away' : homeC?.winner === true ? 'home' : awayScore > homeScore ? 'away' : 'home';
-
-    // Extract top performer per team from summary leaders
+    // Extract per-category leaders by team abbreviation (not by historical home/away position)
     const leaders = summaries[i]?.leaders || [];
-    const getTopPerformer = (teamAbbr) => {
+    const getTeamLeaders = (teamAbbr) => {
       const teamLeaders = leaders.find(l => l.team?.abbreviation === teamAbbr);
       if (!teamLeaders) return null;
-      const pts = teamLeaders.leaders?.find(cat => cat.name === 'points');
-      const top = pts?.leaders?.[0];
-      if (!top) return null;
+      const getCatLeader = (catName) => {
+        const cat = teamLeaders.leaders?.find(c => c.name === catName);
+        const top = cat?.leaders?.[0];
+        return top
+          ? { name: top.athlete?.shortName || top.athlete?.displayName || '?', value: parseInt(top.displayValue) || 0 }
+          : null;
+      };
       return {
-        name: top.athlete?.shortName || top.athlete?.displayName || '?',
-        pts: top.displayValue,
-        ast: teamLeaders.leaders?.find(c => c.name === 'assists')?.leaders?.[0]?.displayValue || '?',
-        reb: teamLeaders.leaders?.find(c => c.name === 'rebounds')?.leaders?.[0]?.displayValue || '?',
+        pts: getCatLeader('points'),
+        reb: getCatLeader('rebounds'),
+        ast: getCatLeader('assists'),
       };
     };
+
+    // Always look up by the current game's away/home abbreviation — fixes historical home/away flip
+    const winnerAbbr = awayC?.winner === true ? awayC?.team?.abbreviation
+      : homeC?.winner === true ? homeC?.team?.abbreviation
+      : awayScore > homeScore ? awayC?.team?.abbreviation : homeC?.team?.abbreviation;
 
     return {
       eventId: ev.id,
       date: new Date(ev.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
       awayTeam: awayC?.team?.abbreviation || '?',
       homeTeam: homeC?.team?.abbreviation || '?',
-      awayScore, homeScore, winner,
-      awayLeader: getTopPerformer(awayC?.team?.abbreviation),
-      homeLeader: getTopPerformer(homeC?.team?.abbreviation),
+      awayScore, homeScore,
+      winner: awayC?.winner === true ? 'away' : homeC?.winner === true ? 'home' : awayScore > homeScore ? 'away' : 'home',
+      winnerAbbr,
+      awayLeader: getTeamLeaders(gameInfo.awayAbbr),
+      homeLeader: getTeamLeaders(gameInfo.homeAbbr),
     };
   });
 }
@@ -582,8 +608,9 @@ function renderOverview({ gameInfo, awayForm, homeForm }) {
   const awayStreak = getStreak(awayForm);
   const homeStreak = getStreak(homeForm);
 
-  const teamCol = (team, abbr, form, wins, streak, side) => `
+  const teamCol = (team, abbr, logo, form, wins, streak) => `
     <div class="team-col">
+      ${logo ? `<img class="overview-logo" src="${logo}" alt="${abbr}" onerror="this.style.display='none'">` : ''}
       <div class="team-name">${abbr}</div>
       <div class="team-record">${team}</div>
       <div class="team-stat-row">
@@ -595,8 +622,8 @@ function renderOverview({ gameInfo, awayForm, homeForm }) {
       </div>
     </div>`;
 
-  document.getElementById('teamColAway').innerHTML = teamCol(gameInfo.awayFull, gameInfo.awayAbbr, awayForm, awayW, awayStreak, 'away');
-  document.getElementById('teamColHome').innerHTML = teamCol(gameInfo.homeFull, gameInfo.homeAbbr, homeForm, homeW, homeStreak, 'home');
+  document.getElementById('teamColAway').innerHTML = teamCol(gameInfo.awayFull, gameInfo.awayAbbr, gameInfo.awayLogo, awayForm, awayW, awayStreak);
+  document.getElementById('teamColHome').innerHTML = teamCol(gameInfo.homeFull, gameInfo.homeAbbr, gameInfo.homeLogo, homeForm, homeW, homeStreak);
 
   // Charts
   document.getElementById('overviewCharts').innerHTML = `
@@ -719,7 +746,7 @@ function renderForm({ gameInfo, awayForm, homeForm }) {
               <div class="form-result ${g.result}">${g.result}</div>
               <div class="form-details">
                 <div class="form-matchup">${g.home ? 'vs' : '@'} ${g.opponent}</div>
-                <div class="form-score">${g.myScore} – ${g.oppScore}${g.player ? ` · <span style="color:var(--lime);opacity:0.8">${g.player.name} ${g.player.pts}pts</span>` : ''}</div>
+                <div class="form-score">${g.myScore} – ${g.oppScore}${g.player?.pts ? ` · <span style="color:var(--lime);opacity:0.8">${g.player.pts.name} ${g.player.pts.value}pts</span>` : ''}</div>
               </div>
               <span class="form-date">${g.date}</span>
             </div>`).join('')}
@@ -742,7 +769,7 @@ function renderFormChart(chartId, games, stat) {
   if (S.charts[chartId]) S.charts[chartId].destroy();
 
   const labels = games.map(g => `${g.home ? 'vs' : '@'}${g.opponent}`);
-  const values = games.map(g => g.player?.[stat] ?? 0);
+  const values = games.map(g => g.player?.[stat]?.value ?? 0);
   const colors = games.map(g =>
     g.result === 'W' ? 'rgba(35,209,139,0.82)' : 'rgba(255,61,90,0.82)'
   );
@@ -783,8 +810,9 @@ function renderFormChart(chartId, games, stat) {
             },
             label: (item) => {
               const g = games[item.dataIndex];
-              if (!g.player) return `${item.raw} ${stat.toUpperCase()}`;
-              return `${g.player.name}: ${g.player.pts} PTS · ${g.player.reb} REB · ${g.player.ast} AST`;
+              const leader = g.player?.[stat];
+              if (!leader) return `${item.raw} ${stat.toUpperCase()}`;
+              return `${leader.name} — ${leader.value} ${stat.toUpperCase()}`;
             },
           },
           backgroundColor: 'rgba(13,13,18,0.95)',
@@ -828,13 +856,17 @@ function renderH2H({ gameInfo, h2h }) {
 
   const awayWins = h2h.filter(g => g.winner === 'away' && g.awayTeam === gameInfo.awayAbbr).length;
   const homeWins = h2h.length - awayWins;
+  const hasLeaders = h2h.some(g => g.awayLeader || g.homeLeader);
 
   const leaderBlock = (leader) => {
     if (!leader) return '';
     return `
       <div class="h2h-leader">
-        <span class="h2h-leader-name">${leader.name}</span>
-        <span class="h2h-leader-stats">${leader.pts} PTS · ${leader.reb} REB · ${leader.ast} AST</span>
+        <span class="h2h-leader-stats">
+          PTS: <strong>${leader.pts?.name || '—'}</strong> ${leader.pts?.value ?? '—'} &nbsp;·&nbsp;
+          REB: <strong>${leader.reb?.name || '—'}</strong> ${leader.reb?.value ?? '—'} &nbsp;·&nbsp;
+          AST: <strong>${leader.ast?.name || '—'}</strong> ${leader.ast?.value ?? '—'}
+        </span>
       </div>`;
   };
 
@@ -850,9 +882,36 @@ function renderH2H({ gameInfo, h2h }) {
       </div>
       <div class="h2h-stat-card">
         <span class="h2h-val" style="color:var(--text2)">${h2h.length}</span>
-        <span class="h2h-label">Last ${h2h.length} Games</span>
+        <span class="h2h-label">Last ${h2h.length} Matchups</span>
       </div>
     </div>
+
+    ${hasLeaders ? `
+    <div class="h2h-charts-row">
+      <div class="form-chart-section">
+        <div class="form-chart-controls">
+          <span class="form-chart-label" style="color:var(--blue)">${gameInfo.awayAbbr} · Player of the Game</span>
+          <div class="stat-toggle">
+            <button class="stat-btn active" onclick="switchH2HStat('h2hChartAway', 'pts', this)">PTS</button>
+            <button class="stat-btn" onclick="switchH2HStat('h2hChartAway', 'reb', this)">REB</button>
+            <button class="stat-btn" onclick="switchH2HStat('h2hChartAway', 'ast', this)">AST</button>
+          </div>
+        </div>
+        <canvas id="h2hChartAway" height="150"></canvas>
+      </div>
+      <div class="form-chart-section">
+        <div class="form-chart-controls">
+          <span class="form-chart-label" style="color:var(--lime)">${gameInfo.homeAbbr} · Player of the Game</span>
+          <div class="stat-toggle">
+            <button class="stat-btn active" onclick="switchH2HStat('h2hChartHome', 'pts', this)">PTS</button>
+            <button class="stat-btn" onclick="switchH2HStat('h2hChartHome', 'reb', this)">REB</button>
+            <button class="stat-btn" onclick="switchH2HStat('h2hChartHome', 'ast', this)">AST</button>
+          </div>
+        </div>
+        <canvas id="h2hChartHome" height="150"></canvas>
+      </div>
+    </div>` : ''}
+
     <div class="h2h-game-list">
       ${h2h.map(g => `
         <div class="h2h-game">
@@ -866,15 +925,112 @@ function renderH2H({ gameInfo, h2h }) {
           <div class="h2h-leaders-row">
             <div class="h2h-leader-col">
               <span class="h2h-leader-tag" style="color:var(--blue)">${g.awayTeam}</span>
-              ${leaderBlock(g.awayLeader, g.awayTeam)}
+              ${leaderBlock(g.awayLeader)}
             </div>
             <div class="h2h-leader-col">
               <span class="h2h-leader-tag" style="color:var(--lime)">${g.homeTeam}</span>
-              ${leaderBlock(g.homeLeader, g.homeTeam)}
+              ${leaderBlock(g.homeLeader)}
             </div>
           </div>` : ''}
         </div>`).join('')}
     </div>`;
+
+  if (hasLeaders) {
+    setTimeout(() => {
+      renderH2HChart('h2hChartAway', h2h, 'away', 'pts');
+      renderH2HChart('h2hChartHome', h2h, 'home', 'pts');
+    }, 50);
+  }
+}
+
+function renderH2HChart(chartId, h2h, side, stat) {
+  const ctx = document.getElementById(chartId);
+  if (!ctx) return;
+  if (S.charts[chartId]) S.charts[chartId].destroy();
+
+  const teamAbbr = side === 'away' ? S.gameData.gameInfo.awayAbbr : S.gameData.gameInfo.homeAbbr;
+  const ordered = [...h2h].reverse(); // oldest left, newest right
+  const labels = ordered.map(g => g.date.replace(/,.*/, ''));
+  const values = ordered.map(g => {
+    const leader = side === 'away' ? g.awayLeader : g.homeLeader;
+    return leader?.[stat]?.value ?? 0;
+  });
+  const colors = ordered.map(g =>
+    g.winnerAbbr === teamAbbr ? 'rgba(35,209,139,0.82)' : 'rgba(255,61,90,0.82)'
+  );
+  const avg = values.length ? values.reduce((s, v) => s + v, 0) / values.length : 0;
+
+  S.charts[chartId] = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        {
+          data: values,
+          backgroundColor: colors,
+          borderRadius: 5,
+          borderSkipped: false,
+        },
+        {
+          type: 'line',
+          data: new Array(values.length).fill(parseFloat(avg.toFixed(1))),
+          borderColor: 'rgba(255,255,255,0.22)',
+          borderWidth: 1.5,
+          borderDash: [5, 4],
+          pointRadius: 0,
+          fill: false,
+          tension: 0,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            title: (items) => {
+              const g = ordered[items[0].dataIndex];
+              return `${g.awayTeam} @ ${g.homeTeam} · ${g.awayScore}–${g.homeScore}`;
+            },
+            label: (item) => {
+              const g = ordered[item.dataIndex];
+              const leader = side === 'away' ? g.awayLeader : g.homeLeader;
+              const catLeader = leader?.[stat];
+              if (!catLeader) return `${item.raw} ${stat.toUpperCase()}`;
+              return `${catLeader.name} — ${catLeader.value} ${stat.toUpperCase()}`;
+            },
+          },
+          backgroundColor: 'rgba(13,13,18,0.95)',
+          borderColor: 'rgba(255,255,255,0.1)',
+          borderWidth: 1,
+          titleColor: '#f0f0fa',
+          bodyColor: '#b8bce8',
+          padding: 10,
+        },
+      },
+      scales: {
+        x: {
+          ticks: { color: '#8888b0', font: { family: 'IBM Plex Mono', size: 10 } },
+          grid: { display: false },
+          border: { display: false },
+        },
+        y: {
+          ticks: { color: '#8888b0', font: { family: 'IBM Plex Mono', size: 10 }, stepSize: 5 },
+          grid: { color: 'rgba(255,255,255,0.04)' },
+          border: { display: false },
+          beginAtZero: true,
+        },
+      },
+    },
+  });
+}
+
+function switchH2HStat(chartId, stat, btn) {
+  btn.closest('.stat-toggle').querySelectorAll('.stat-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  const side = chartId === 'h2hChartAway' ? 'away' : 'home';
+  renderH2HChart(chartId, S.gameData.h2h, side, stat);
 }
 
 /* ── INJURIES ───────────────────────────────────────────── */
