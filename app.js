@@ -307,7 +307,7 @@ function parseGameInput(raw) {
 /* ── ESPN FETCH HELPER ──────────────────────────────────── */
 async function espn(url) {
   try {
-    const r = await fetch(url);
+    const r = await fetch(url, { cache: 'no-store' });
     if (!r.ok) return null;
     return await r.json();
   } catch { return null; }
