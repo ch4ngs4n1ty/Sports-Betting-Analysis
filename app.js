@@ -23,12 +23,10 @@ function teamLogoUrl(league, abbr, teamId) {
 
 /* ── ESPN SPORT MAP ─────────────────────────────────────── */
 const SPORTS = [
-  { key: 'nba', sport: 'basketball', league: 'nba',    label: 'NBA' },
-  { key: 'nfl', sport: 'football',   league: 'nfl',    label: 'NFL' },
-  { key: 'mlb', sport: 'baseball',   league: 'mlb',    label: 'MLB' },
-  { key: 'nhl', sport: 'hockey',     league: 'nhl',    label: 'NHL' },
-  { key: 'ncaamb', sport: 'basketball', league: 'mens-college-basketball', label: 'NCAAB' },
-  { key: 'ncaafb', sport: 'football',   league: 'college-football',        label: 'NCAAF' },
+  { key: 'nba',    sport: 'basketball', league: 'nba',                     label: 'NBA' },
+  { key: 'mlb',    sport: 'baseball',   league: 'mlb',                     label: 'MLB' },
+  { key: 'nhl',    sport: 'hockey',     league: 'nhl',                     label: 'NHL' },
+  { key: 'ncaamb', sport: 'basketball', league: 'mens-college-basketball',  label: 'NCAAB' },
 ];
 
 /* ── INIT ───────────────────────────────────────────────── */
