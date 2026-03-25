@@ -542,11 +542,16 @@ async function fetchInjuries(gameInfo) {
   if (!data?.injuries) return { away: [], home: [] };
 
   const filter = (teamId) => {
-    const teamInj = data.injuries.find(t => t.team?.id === teamId);
+    const teamInj = data.injuries.find(t => String(t.team?.id) === String(teamId));
+    const sp2 = SPORTS.find(s => s.key === gameInfo.sportKey);
     return (teamInj?.injuries || []).map(i => ({
       name: i.athlete?.displayName || '—',
       status: i.status || 'Unknown',
       desc: i.injury?.description || i.shortComment || '—',
+      athleteId: i.athlete?.id || null,
+      headshotUrl: i.athlete?.id && sp2
+        ? `https://a.espncdn.com/i/headshots/${sp2.league}/players/full/${i.athlete.id}.png`
+        : null,
     }));
   };
 
@@ -660,6 +665,7 @@ async function fetchPlayerLastGames(sportKey, teamId, athleteId) {
     const cats = window.SportConfig?.[sportKey]?.statCategories || [];
     const statVals = {};
     cats.forEach(c => { statVals[c.key] = 0; });
+    let min = null, fga = 0;
     let didNotPlay = false, dnpReason = '';
 
     const summary = summaries[i];
@@ -680,6 +686,9 @@ async function fetchPlayerLastGames(sportKey, teamId, athleteId) {
                 const idx = lbls.indexOf(c.espnBoxLabel);
                 statVals[c.key] = idx > -1 ? (parseInt(ath.stats?.[idx] || 0) || 0) : 0;
               });
+              const minIdx = lbls.indexOf('MIN'), fgaIdx = lbls.indexOf('FGA');
+              min = minIdx > -1 ? (parseFloat(ath.stats?.[minIdx]) || null) : null;
+              fga = fgaIdx > -1 ? (parseInt(ath.stats?.[fgaIdx]) || 0) : 0;
             }
             break outer;
           }
@@ -688,11 +697,14 @@ async function fetchPlayerLastGames(sportKey, teamId, athleteId) {
       if (!playerFound) { didNotPlay = true; dnpReason = 'INACTIVE'; }
     }
 
+    const dateObj = new Date(ev.date);
     return {
       opponent: oppC?.team?.abbreviation || '?',
+      oppTeamId: oppC?.team?.id,
       isHome: teamC?.homeAway === 'home',
-      result, myScore, oppScore, ...statVals, didNotPlay, dnpReason,
-      date: new Date(ev.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+      result, myScore, oppScore, min, fga, ...statVals, didNotPlay, dnpReason,
+      date: dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+      dateObj,
     };
   });
 }
@@ -730,8 +742,8 @@ async function openPlayerModal(el) {
   const defaultModalStat = window.SportConfig?.[sportKey]?.statCategories?.[0]?.key || 'pts';
   renderPlayerModalChart(defaultModalStat);
 
-  // Prefetch research in background — store promise so tab can await it without re-fetching
-  S.playerModal.researchPromise = fetchPlayerResearchData(sportKey, teamId, athleteId)
+  // Prefetch research in background — reuses already-fetched games, only NBA.com call remaining
+  S.playerModal.researchPromise = fetchPlayerResearchData(sportKey, teamId, games)
     .then(d => { S.playerModal.research = d; return d; })
     .catch(() => null);
 }
@@ -822,7 +834,7 @@ function closePlayerModal(e) {
 /* ── PLAYER RESEARCH TAB ────────────────────────────────── */
 async function fetchNBAStat(url) {
   const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), 3000);
+  const t = setTimeout(() => ctrl.abort(), 1000);
   try {
     const r = await fetch(url, {
       signal: ctrl.signal,
@@ -839,89 +851,28 @@ async function fetchNBAStat(url) {
   } catch { clearTimeout(t); return null; }
 }
 
-async function fetchPlayerResearchData(sportKey, teamId, athleteId) {
-  const sp = SPORTS.find(s => s.key === sportKey);
-  if (!sp) return null;
-  const season = getSeasonYear(sportKey);
-
-  const schedData = await espn(
-    `https://site.api.espn.com/apis/site/v2/sports/${sp.sport}/${sp.league}/teams/${teamId}/schedule?season=${season}`
-  );
-  if (!schedData?.events) return null;
-
-  const completed = schedData.events
-    .filter(e => e.competitions?.[0]?.status?.type?.completed)
-    .slice(-10);
-
-  const summaries = await Promise.all(
-    completed.map(e => espn(`https://site.api.espn.com/apis/site/v2/sports/${sp.sport}/${sp.league}/summary?event=${e.id}`))
-  );
-
-  const games = completed.map((ev, i) => {
-    const comp = ev.competitions[0];
-    const teamC = comp.competitors.find(c => c.team?.id === teamId);
-    const oppC  = comp.competitors.find(c => c.team?.id !== teamId);
-    const ps = s => parseInt(s?.displayValue ?? s ?? 0) || 0;
-    const myScore  = ps(teamC?.score);
-    const oppScore = ps(oppC?.score);
-    const result   = teamC?.winner ? 'W' : oppC?.winner ? 'L' : myScore > oppScore ? 'W' : 'L';
-    const dateObj  = new Date(ev.date);
-
-    let min = null, pts = 0, fga = 0, reb = 0, ast = 0;
-    let didNotPlay = false, dnpReason = '';
-
-    const summary = summaries[i];
-    if (summary?.boxscore?.players) {
-      outer: for (const td of summary.boxscore.players) {
-        for (const grp of td.statistics || []) {
-          const lbls = grp.labels || [];
-          const ath  = grp.athletes?.find(a => a.athlete?.id === athleteId);
-          if (!ath) continue;
-          const isDnp = ath.didNotPlay || !ath.stats?.length || ath.stats?.[0] === 'DNP' || ath.stats?.[0] === '0:00';
-          if (isDnp) {
-            didNotPlay = true; dnpReason = ath.reason || 'DNP';
-          } else {
-            const gi = k => lbls.indexOf(k);
-            const gv = k => { const i = gi(k); return i > -1 ? (parseFloat(ath.stats[i]) || 0) : null; };
-            min = gv('MIN'); pts = gv('PTS') || 0; fga = gv('FGA') || 0;
-            reb = gv('REB') || 0; ast = gv('AST') || 0;
-          }
-          break outer;
-        }
-      }
-    }
-
-    return {
-      date: dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-      dateObj, opponent: oppC?.team?.abbreviation || '?',
-      oppTeamId: oppC?.team?.id,
-      isHome: teamC?.homeAway === 'home',
-      result, myScore, oppScore,
-      min, pts, fga, reb, ast, didNotPlay, dnpReason,
-    };
-  });
-
-  // B2B check: did team play yesterday?
-  const yestET  = new Date(Date.now() - 864e5).toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
-  const lastGame = games.filter(g => !g.didNotPlay).at(-1);
-  const isB2B    = lastGame && lastGame.dateObj.toLocaleDateString('en-CA') === yestET;
-
-  // Try NBA.com Advanced team stats (pace, def rank) — may be CORS-blocked
+async function fetchPlayerResearchData(sportKey, teamId, games) {
+  // games already fetched by fetchPlayerLastGames — no ESPN re-fetch needed
   const nbaSeasonStr = (() => {
     const yr = getSeasonYear(sportKey);
     return `${yr - 1}-${String(yr).slice(2)}`;
   })();
 
-  const [nbaTeamAdv] = await Promise.all([
-    fetchNBAStat(`https://stats.nba.com/stats/leaguedashteamstats?MeasureType=Advanced&PerMode=PerGame&Season=${nbaSeasonStr}&SeasonType=Regular+Season&LeagueID=00`),
-  ]);
+  // B2B check
+  const yestET  = new Date(Date.now() - 864e5).toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+  const lastGame = (games || []).filter(g => !g.didNotPlay).at(-1);
+  const isB2B    = !!(lastGame?.dateObj?.toLocaleDateString('en-CA') === yestET);
 
-  // Parse opponent team advanced stats
-  const oppTeamId = lastGame?.oppTeamId || S.gameData.gameInfo.awayTeamId === teamId
-    ? S.gameData.gameInfo.homeTeamId : S.gameData.gameInfo.awayTeamId;
+  // NBA.com advanced stats (CORS-blocked → 1s timeout, then null)
+  const nbaTeamAdv = await fetchNBAStat(
+    `https://stats.nba.com/stats/leaguedashteamstats?MeasureType=Advanced&PerMode=PerGame&Season=${nbaSeasonStr}&SeasonType=Regular+Season&LeagueID=00`
+  );
+
+  const oppTeamId = lastGame?.oppTeamId || (S.gameData.gameInfo.awayTeamId === teamId
+    ? S.gameData.gameInfo.homeTeamId : S.gameData.gameInfo.awayTeamId);
   let oppPace = null, oppDefRtg = null;
   if (nbaTeamAdv?.resultSets?.[0]) {
-    const rs = nbaTeamAdv.resultSets[0];
+    const rs      = nbaTeamAdv.resultSets[0];
     const headers = rs.headers;
     const paceIdx = headers.indexOf('PACE');
     const defIdx  = headers.indexOf('DEF_RATING');
@@ -984,7 +935,41 @@ function renderResearchTab(data, gameInfo, injuries) {
   // 3 — OPPONENT DEFENSE
   const oppAbbr = isAway ? gameInfo.homeAbbr : gameInfo.awayAbbr;
 
-  // 4 — PACE & GAME TOTAL
+  // 4 — SCORE MARGIN SPLITS
+  const closeGames  = played.filter(g => Math.abs(g.myScore - g.oppScore) <= 9);
+  const blowouts    = played.filter(g => Math.abs(g.myScore - g.oppScore) >= 10);
+  const avgArr      = (arr, key) => arr.length ? +(arr.reduce((s, g) => s + (g[key] || 0), 0) / arr.length).toFixed(1) : null;
+  const closeAvgMin = avgArr(closeGames, 'min');
+  const closeAvgPts = avgArr(closeGames, 'pts');
+  const blowAvgMin  = avgArr(blowouts, 'min');
+  const blowAvgPts  = avgArr(blowouts, 'pts');
+  const closeHits   = l10pts != null ? closeGames.filter(g => g.pts > l10pts).length : null;
+  const blowHits    = l10pts != null ? blowouts.filter(g => g.pts > l10pts).length : null;
+
+  let tonightScenario = null;
+  if (gameInfo.spread) {
+    const spreadNum = parseFloat(gameInfo.spread.replace(/[^\d.-]/g, ''));
+    if (!isNaN(spreadNum)) tonightScenario = Math.abs(spreadNum) <= 6 ? 'close' : 'blowout';
+  }
+
+  let marginNote = '';
+  if (closeAvgMin != null && blowAvgMin != null && Math.abs(closeAvgMin - blowAvgMin) >= 3) {
+    const diff = closeAvgMin - blowAvgMin;
+    marginNote = diff > 0
+      ? `Plays ~${Math.abs(diff).toFixed(0)} more min in close games${tonightScenario === 'close' ? ' — tonight looks close (favorable)' : tonightScenario === 'blowout' ? ' — tonight may be a blowout (role risk)' : ''}.`
+      : `Plays ~${Math.abs(diff).toFixed(0)} more min in blowouts${tonightScenario === 'blowout' ? ' — tonight looks like a blowout (favorable)' : tonightScenario === 'close' ? ' — tonight may be close (role risk)' : ''}.`;
+  }
+
+  const marginRow = (label, games, avgM, avgP, hits, highlight) => {
+    if (!games.length) return `<div class="rt-row"><span class="rt-key">${label}</span><span class="rt-val rt-na">no data</span></div>`;
+    const hStr = hits != null ? ` · ${hits}/${games.length} over avg` : '';
+    return `<div class="rt-row${highlight ? ' rt-row-hl' : ''}">
+      <span class="rt-key">${label} <span class="rt-sample">(${games.length}g)</span></span>
+      <span class="rt-val">${avgM != null ? Math.round(avgM) + 'min' : 'N/A'} · ${avgP != null ? avgP + 'pts' : 'N/A'}${hStr}</span>
+    </div>`;
+  };
+
+  // 6 — PACE & GAME TOTAL
   const ou = gameInfo.overUnder;
 
   // 5 — HIT RATE (vs own L10 avg)
@@ -1063,6 +1048,15 @@ function renderResearchTab(data, gameInfo, injuries) {
           <div class="rt-row"><span class="rt-key">Opp Def Rating</span><span class="rt-val">${oppDefRtg != null ? oppDefRtg : '<span class="rt-na">unavailable</span>'}</span></div>
           <div class="rt-row"><span class="rt-key">vs ${oppAbbr} (ESPN)</span><span class="rt-val">${oppOut.length ? `${oppOut.length} key players out` : 'Full strength'}</span></div>
         </div>
+      </div>
+
+      <div class="rt-section">
+        <div class="rt-section-title">Score Margin Splits</div>
+        <div class="rt-rows">
+          ${marginRow('Close (≤9 pts)', closeGames, closeAvgMin, closeAvgPts, closeHits, tonightScenario === 'close')}
+          ${marginRow('Blowout (≥10 pts)', blowouts, blowAvgMin, blowAvgPts, blowHits, tonightScenario === 'blowout')}
+        </div>
+        ${marginNote ? `<div class="rt-margin-note">${marginNote}</div>` : ''}
       </div>
 
       <div class="rt-section">
@@ -1577,7 +1571,7 @@ function switchH2HStat(chartId, stat, btn) {
 
 /* ── PROP CONTEXT TAB ───────────────────────────────────── */
 async function renderProps(data) {
-  const { gameInfo, injuries, awayForm, homeForm } = data;
+  const { gameInfo, awayForm, homeForm } = data;
   const el = document.getElementById('propsContent');
   if (!el) return;
 
@@ -1592,6 +1586,19 @@ async function renderProps(data) {
   } catch (e) {
     console.error('fetchTeamStats failed:', e);
   }
+
+  // Build injury lists from roster data (more reliable than the injuries endpoint)
+  const rosterInjuries = (roster) => (roster || [])
+    .filter(p => p.status && !/active/i.test(p.status))
+    .map(p => ({
+      name: p.name,
+      status: p.status,
+      desc: p.pos || '',
+      athleteId: p.id,
+      headshotUrl: p.headshotUrl,
+    }));
+  const awayInj = rosterInjuries(data.awayRoster);
+  const homeInj = rosterInjuries(data.homeRoster);
 
   // Back-to-back check — did either team play yesterday?
   const yest = new Date(); yest.setDate(yest.getDate() - 1);
@@ -1625,19 +1632,33 @@ async function renderProps(data) {
       </div>`;
   };
 
+  const injStatusColor = (s) =>
+    /out/i.test(s)        ? 'var(--red)'    :
+    /doubtful/i.test(s)   ? 'var(--orange)' :
+    /questionable/i.test(s) ? 'var(--yellow)' : 'var(--text3)';
+
   const injBlock = (injs, label, color) => {
-    const out = (injs||[]).filter(i => /out|doubtful/i.test(i.status));
-    if (!out.length) return `<div class="pc-inj-none" style="color:${color}"><span style="opacity:.5">${label}</span> — No injuries reported</div>`;
-    return `<div class="pc-inj-team">
-      <span class="pc-inj-label" style="color:${color}">${label}</span>
-      ${out.map(i => `
-        <div class="pc-inj-row">
-          <span class="inj-dot" style="background:${/out/i.test(i.status)?'var(--red)':'var(--orange)'}"></span>
-          <span class="pc-inj-name">${i.name}</span>
-          <span class="pc-inj-status">${i.status}</span>
-          <span class="pc-inj-desc">${i.desc}</span>
-        </div>`).join('')}
-    </div>`;
+    const list = (injs || []).filter(i => !/active|healthy/i.test(i.status));
+    if (!list.length) return `
+      <div class="pc-inj-none">
+        <span class="pc-inj-label" style="color:${color}">${label}</span>
+        <span style="color:var(--text3);font-size:12px">No injuries reported</span>
+      </div>`;
+    return `
+      <div class="pc-inj-team">
+        <span class="pc-inj-label" style="color:${color}">${label}</span>
+        ${list.map(i => `
+          <div class="pc-inj-player">
+            ${i.headshotUrl
+              ? `<img class="pc-inj-headshot" src="${i.headshotUrl}" alt="${i.name}" onerror="this.style.display='none'">`
+              : `<div class="pc-inj-headshot pc-inj-headshot-empty"></div>`}
+            <div class="pc-inj-info">
+              <span class="pc-inj-name">${i.name}</span>
+              <span class="pc-inj-desc">${i.desc}</span>
+            </div>
+            <span class="pc-inj-badge" style="color:${injStatusColor(i.status)};border-color:${injStatusColor(i.status)}">${i.status}</span>
+          </div>`).join('')}
+      </div>`;
   };
 
   try {
@@ -1655,8 +1676,8 @@ async function renderProps(data) {
       <div class="pc-card">
         <div class="pc-card-title">Injury Report Impact</div>
         <div class="pc-inj-grid">
-          ${injBlock(injuries?.away, gameInfo.awayAbbr, 'var(--blue)')}
-          ${injBlock(injuries?.home, gameInfo.homeAbbr, 'var(--orange)')}
+          ${injBlock(awayInj, gameInfo.awayAbbr, 'var(--blue)')}
+          ${injBlock(homeInj, gameInfo.homeAbbr, 'var(--orange)')}
         </div>
       </div>
 
