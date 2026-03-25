@@ -39,6 +39,18 @@ if ('serviceWorker' in navigator) {
 /* ── INIT ───────────────────────────────────────────────── */
 document.addEventListener('DOMContentLoaded', () => {
   if (S.apiKey) document.getElementById('apiKey').value = S.apiKey;
+
+  // Restore last game if the page reloaded mid-session
+  const saved = sessionStorage.getItem('piq_game');
+  if (saved) {
+    try {
+      const gameInfo = JSON.parse(saved);
+      loadDashboard(); // load in background so dashboard is ready if user goes back
+      startAnalysis(gameInfo);
+      return;
+    } catch { sessionStorage.removeItem('piq_game'); }
+  }
+
   loadDashboard();
 });
 
@@ -203,6 +215,7 @@ function renderGameCard(g, idx) {
 
 /* ── RESET ──────────────────────────────────────────────── */
 function resetToDashboard() {
+  sessionStorage.removeItem('piq_game');
   document.getElementById('dashboardSection').classList.remove('hidden');
   document.getElementById('analysisPanel').classList.add('hidden');
   Object.values(S.charts).forEach(c => { try { c.destroy(); } catch(e){} });
@@ -219,6 +232,8 @@ function analyzeGame(idx) {
 }
 
 async function startAnalysis(gameInfo) {
+  sessionStorage.setItem('piq_game', JSON.stringify(gameInfo));
+
   // Hide dashboard, show analysis panel
   document.getElementById('dashboardSection').classList.add('hidden');
   document.getElementById('analysisPanel').classList.remove('hidden');
