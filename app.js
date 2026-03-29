@@ -549,18 +549,39 @@ async function fetchInjuries(gameInfo) {
   const data = await espn(`https://site.api.espn.com/apis/site/v2/sports/${sp.sport}/${sp.league}/injuries`);
   if (!data?.injuries) return { away: [], home: [] };
 
+  // ESPN structure: data.injuries = [ { id: teamId, displayName: "Team Name", injuries: [...] } ]
   const filter = (teamId) => {
-    const teamInj = data.injuries.find(t => String(t.team?.id) === String(teamId));
-    const sp2 = SPORTS.find(s => s.key === gameInfo.sportKey);
-    return (teamInj?.injuries || []).map(i => ({
-      name: i.athlete?.displayName || '—',
-      status: i.status || 'Unknown',
-      desc: i.injury?.description || i.shortComment || '—',
-      athleteId: i.athlete?.id || null,
-      headshotUrl: i.athlete?.id && sp2
-        ? `https://a.espncdn.com/i/headshots/${sp2.league}/players/full/${i.athlete.id}.png`
-        : null,
-    }));
+    const teamInj = data.injuries.find(t => String(t.id) === String(teamId));
+    return (teamInj?.injuries || []).map(i => {
+      // Extract athlete ID from links URL if not directly available
+      const athleteId = i.athlete?.id
+        || i.athlete?.links?.[0]?.href?.match(/\/id\/(\d+)\//)?.[1]
+        || null;
+
+      // shortComment has the specific injury note, longComment has context/return info
+      const shortComment = i.shortComment || '';
+      const longComment = i.longComment || '';
+
+      // Extract injury type from shortComment (e.g. "Okongwu (finger) won't play...")
+      const injuryMatch = shortComment.match(/\(([^)]+)\)/);
+      const injuryType = injuryMatch ? injuryMatch[1] : '';
+
+      // Build estimated return string from longComment
+      const estReturn = longComment || '';
+
+      return {
+        name: i.athlete?.displayName || '—',
+        status: i.status || 'Unknown',
+        desc: injuryType || shortComment.slice(0, 80) || '—',
+        pos: i.athlete?.position?.abbreviation || '',
+        shortComment,
+        estReturn,
+        athleteId,
+        headshotUrl: athleteId
+          ? `https://a.espncdn.com/i/headshots/${sp.league}/players/full/${athleteId}.png`
+          : null,
+      };
+    });
   };
 
   return {
@@ -1106,6 +1127,14 @@ async function fetchRoster(sportKey, teamId) {
   (data.athletes || []).forEach(group => {
     (group.items || [group]).forEach(p => {
       if (p.fullName) {
+        // ESPN status/injury status can be objects — always extract as string
+        const rawInjStatus = p.injuries?.[0]?.status;
+        const rawStatus = p.status;
+        const extractStr = (v) => typeof v === 'string' ? v : (v?.description || v?.name || v?.type || v?.text || null);
+        const injuryStatus = extractStr(rawInjStatus);
+        const playerStatus = extractStr(rawStatus);
+        const injuryDesc = p.injuries?.[0]?.type?.description || p.injuries?.[0]?.details?.type || '';
+
         players.push({
           id: p.id,
           name: p.displayName || p.fullName,
@@ -1114,13 +1143,14 @@ async function fetchRoster(sportKey, teamId) {
           pos: p.position?.abbreviation || '—',
           position: p.position?.abbreviation || '',
           jersey: p.jersey || '—',
-          status: p.injuries?.[0]?.status || null,
+          status: injuryStatus || playerStatus || 'Active',
+          injuryDesc: injuryDesc,
           headshotUrl: p.headshot?.href || null,
         });
       }
     });
   });
-  return players.slice(0, 20);
+  return players;
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -1222,16 +1252,28 @@ function buildOverviewCharts(gameInfo, awayForm, homeForm) {
 
 /* ── ROSTER ─────────────────────────────────────────────── */
 function renderRoster({ gameInfo, awayRoster, homeRoster }) {
+  const statusColor = (s) => {
+    if (!s || /^active$/i.test(s)) return 'var(--green)';
+    if (/out/i.test(s)) return 'var(--red)';
+    if (/doubtful/i.test(s)) return 'var(--orange)';
+    if (/questionable/i.test(s)) return 'var(--yellow)';
+    if (/day.to.day/i.test(s)) return 'var(--yellow)';
+    return 'var(--text3)';
+  };
   const table = (roster) => `
     <table class="roster-table">
       <thead><tr><th>#</th><th>Player</th><th>Pos</th><th>Status</th></tr></thead>
-      <tbody>${roster.map(p => `
+      <tbody>${roster.map(p => {
+        const sc = statusColor(p.status);
+        const label = p.status || 'Active';
+        return `
         <tr>
           <td style="color:var(--text3)">${p.jersey}</td>
           <td>${p.name}</td>
           <td><span class="player-pos">${p.pos}</span></td>
-          <td style="color:${p.status ? 'var(--red)' : 'var(--text3)'}">${p.status || '—'}</td>
-        </tr>`).join('')}
+          <td style="color:${sc}">${label}</td>
+        </tr>`;
+      }).join('')}
       </tbody>
     </table>`;
 
@@ -1269,22 +1311,6 @@ function renderForm({ gameInfo, awayForm, homeForm }) {
           <canvas id="${chartId}" height="150"></canvas>
         </div>
       </div>` : ''}
-      <div class="form-games-list">
-        ${form.length === 0 ? '<p class="empty-msg">No recent games found</p>' :
-          [...form].reverse().map(g => {
-            const leader = firstCat && g.player?.[firstCat.key];
-            const leaderStr = leader ? ` · <span style="color:var(--lime);opacity:0.8">${leader.name} ${leader.value}${firstCat.label.toLowerCase()}</span>` : '';
-            return `
-            <div class="form-game">
-              <div class="form-result ${g.result}">${g.result}</div>
-              <div class="form-details">
-                <div class="form-matchup">${g.home ? 'vs' : '@'} ${g.opponent}</div>
-                <div class="form-score">${g.myScore} – ${g.oppScore}${leaderStr}</div>
-              </div>
-              <span class="form-date">${g.date}</span>
-            </div>`;
-          }).join('')}
-      </div>
     </div>`;
 
   document.getElementById('formGrid').innerHTML = `
@@ -1320,18 +1346,51 @@ function renderFormChart(chartId, games, stat) {
   if (!ctx) return;
   if (S.charts[chartId]) S.charts[chartId].destroy();
 
-  const CARD_H = 96; // card height reserve above bars
-  const labels = games.map(g => `${g.home ? 'vs' : '@'}${g.opponent}`);
+  const CARD_H = 96;
+  const LOGO_SIZE = 22;
   const values = games.map(g => g.player?.[stat]?.value ?? 0);
   const colors = games.map(g =>
     g.result === 'W' ? 'rgba(35,209,139,0.82)' : 'rgba(255,61,90,0.82)'
   );
   const avg = values.length ? values.reduce((s, v) => s + v, 0) / values.length : 0;
 
+  // Preload opponent logos
+  const sp = SPORTS.find(s => s.key === S.gameData?.gameInfo?.sportKey);
+  const logoImgs = games.map(g => {
+    const img = new Image();
+    img.src = sp ? `https://a.espncdn.com/i/teamlogos/${sp.league}/500-dark/${g.opponent.toLowerCase()}.png` : '';
+    img.onload = () => { if (S.charts[chartId]) S.charts[chartId].update('none'); };
+    return img;
+  });
+
+  const xLogoPlugin = {
+    id: 'xLogos',
+    afterDraw(chart) {
+      const { ctx: c, chartArea, scales } = chart;
+      const xScale = scales.x;
+      games.forEach((g, i) => {
+        const x = xScale.getPixelForValue(i);
+        const y = chartArea.bottom + 8;
+        const img = logoImgs[i];
+        if (img?.complete && img.naturalWidth > 0) {
+          c.drawImage(img, Math.round(x - LOGO_SIZE / 2), Math.round(y), LOGO_SIZE, LOGO_SIZE);
+        } else {
+          // fallback: dim text
+          c.save();
+          c.fillStyle = '#555577';
+          c.font = '9px IBM Plex Mono';
+          c.textAlign = 'center';
+          c.fillText(g.opponent, x, y + 14);
+          c.restore();
+        }
+      });
+    },
+  };
+
   S.charts[chartId] = new Chart(ctx, {
     type: 'bar',
     data: {
-      labels,
+      labels: games.map(() => ''),
       datasets: [
         {
           data: values,
@@ -1354,7 +1413,7 @@ function renderFormChart(chartId, games, stat) {
     options: {
       responsive: true,
       animation: { duration: 120, onComplete: () => positionBarCards(chartId, games, stat) },
-      layout: { padding: { top: CARD_H + 8 } },
+      layout: { padding: { top: CARD_H + 8, bottom: 10 } },
       plugins: {
         legend: { display: false },
         tooltip: {
@@ -1380,7 +1439,7 @@ function renderFormChart(chartId, games, stat) {
       },
       scales: {
         x: {
-          ticks: { color: '#8888b0', font: { family: 'IBM Plex Mono', size: 10 } },
+          ticks: { color: 'transparent', font: { family: 'IBM Plex Mono', size: 10 } },
           grid: { display: false },
           border: { display: false },
         },
@@ -1392,6 +1451,7 @@ function renderFormChart(chartId, games, stat) {
         },
       },
     },
+    plugins: [xLogoPlugin],
   });
 
 }
@@ -1672,18 +1732,40 @@ async function renderProps(data) {
     console.error('fetchTeamStats failed:', e);
   }
 
-  // Build injury lists from roster data (more reliable than the injuries endpoint)
-  const rosterInjuries = (roster) => (roster || [])
-    .filter(p => p.status && !/active/i.test(p.status))
-    .map(p => ({
-      name: p.name,
-      status: p.status,
-      desc: p.pos || '',
-      athleteId: p.id,
-      headshotUrl: p.headshotUrl,
-    }));
-  const awayInj = rosterInjuries(data.awayRoster);
-  const homeInj = rosterInjuries(data.homeRoster);
+  // Only show truly injured players (not active) — enrich with position from roster
+  const enrichWithPos = (injs, roster) => injs.map(i => {
+    if (!i.pos) {
+      const match = roster.find(p => p.name === i.name || p.fullName === i.name);
+      if (match) i.pos = match.pos;
+    }
+    return i;
+  });
+  const awayInj = enrichWithPos(
+    (data.injuries?.away || []).filter(i => !/^active$/i.test(i.status)),
+    data.awayRoster || []
+  );
+  const homeInj = enrichWithPos(
+    (data.injuries?.home || []).filter(i => !/^active$/i.test(i.status)),
+    data.homeRoster || []
+  );
+
+  // Also pull injured players from roster that might not be in injury report
+  const addRosterInjured = (roster, existingInjs) => {
+    const existingNames = new Set(existingInjs.map(i => i.name));
+    roster.forEach(p => {
+      if (!existingNames.has(p.name) && p.status && !/^active$/i.test(p.status)) {
+        existingInjs.push({
+          name: p.name,
+          status: p.status,
+          desc: p.injuryDesc || '—',
+          pos: p.pos,
+          headshotUrl: p.headshotUrl,
+        });
+      }
+    });
+  };
+  addRosterInjured(data.awayRoster || [], awayInj);
+  addRosterInjured(data.homeRoster || [], homeInj);
 
   // Back-to-back check — did either team play yesterday?
   const yest = new Date(); yest.setDate(yest.getDate() - 1);
@@ -1718,32 +1800,26 @@ async function renderProps(data) {
   };
 
   const injStatusColor = (s) =>
-    /out/i.test(s)        ? 'var(--red)'    :
-    /doubtful/i.test(s)   ? 'var(--orange)' :
-    /questionable/i.test(s) ? 'var(--yellow)' : 'var(--text3)';
+    /^active$/i.test(s)      ? 'var(--green)'  :
+    /out/i.test(s)           ? 'var(--red)'    :
+    /doubtful/i.test(s)      ? 'var(--orange)' :
+    /questionable/i.test(s)  ? 'var(--yellow)' : 'var(--text3)';
 
   const injBlock = (injs, label, color) => {
-    const list = (injs || []).filter(i => !/active|healthy/i.test(i.status));
-    if (!list.length) return `
-      <div class="pc-inj-none">
-        <span class="pc-inj-label" style="color:${color}">${label}</span>
-        <span style="color:var(--text3);font-size:12px">No injuries reported</span>
-      </div>`;
-    return `
-      <div class="pc-inj-team">
-        <span class="pc-inj-label" style="color:${color}">${label}</span>
-        ${list.map(i => `
-          <div class="pc-inj-player">
-            ${i.headshotUrl
-              ? `<img class="pc-inj-headshot" src="${i.headshotUrl}" alt="${i.name}" onerror="this.style.display='none'">`
-              : `<div class="pc-inj-headshot pc-inj-headshot-empty"></div>`}
-            <div class="pc-inj-info">
-              <span class="pc-inj-name">${i.name}</span>
-              <span class="pc-inj-desc">${i.desc}</span>
-            </div>
-            <span class="pc-inj-badge" style="color:${injStatusColor(i.status)};border-color:${injStatusColor(i.status)}">${i.status}</span>
-          </div>`).join('')}
-      </div>`;
+    if (!injs?.length) return '<div class="pc-inj-none"><span class="pc-inj-label" style="color:' + color + '">' + label + '</span><span style="color:var(--text3);font-size:12px">No injuries reported</span></div>';
+    const rows = injs.map(i => {
+      const img = i.headshotUrl
+        ? '<img class="pc-inj-headshot" src="' + i.headshotUrl + '" alt="' + i.name + '" onerror="this.style.display=\'none\'">'
+        : '<div class="pc-inj-headshot pc-inj-headshot-empty"></div>';
+      const sc = injStatusColor(i.status);
+      const posTag = i.pos ? '<span class="pc-inj-pos">' + i.pos + '</span>' : '';
+      const descTag = i.desc && i.desc !== '—' ? '<span class="pc-inj-desc">' + i.desc + '</span>' : '';
+      // Estimated return / timeline in yellow
+      const returnInfo = i.estReturn || '';
+      const returnTag = returnInfo ? '<span class="pc-inj-return">' + returnInfo + '</span>' : '';
+      return '<div class="pc-inj-player">' + img + '<div class="pc-inj-info"><span class="pc-inj-name">' + i.name + posTag + '</span>' + descTag + returnTag + '</div><span class="pc-inj-badge" style="color:' + sc + ';border-color:' + sc + '">' + i.status + '</span></div>';
+    }).join('');
+    return '<div class="pc-inj-team"><span class="pc-inj-label" style="color:' + color + '">' + label + '</span>' + rows + '</div>';
   };
 
   try {
@@ -1779,6 +1855,7 @@ async function renderProps(data) {
     el.innerHTML = `<div style="color:var(--red);padding:20px;font-family:var(--font-m);font-size:12px">Props Scout error: ${e.message}</div>`;
   }
 }
+
 
 
 /* ═══════════════════════════════════════════════════════════
