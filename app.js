@@ -1,10 +1,67 @@
 /* ═══════════════════════════════════════════════════════════
    PLAYIQ — app.js
    Deep Game Analysis Engine
+═══════════════════════════════════════════════════════════
+
+   TABLE OF CONTENTS
+   ─────────────────
+   1. STATE & CONFIG .............. line ~15
+   2. INIT & DASHBOARD ........... line ~40
+   3. ANALYSIS ENTRY POINT ....... line ~234
+   4. ESPN FETCH LAYER (all sports) line ~320
+      - espn() helper
+      - getSeasonYear()        ← NFL/NCAAFB-specific season logic
+      - fetchTeamForm()
+      - enrichFormWithPlayerStats()
+      - fetchTeamStats()
+   5. NBA-SPECIFIC FETCHERS ...... line ~484
+      - fetchPlayerPropData()  ← NBA stat labels (PTS/REB/AST/FGA/MIN)
+      - fetchInjuries()
+      - fetchH2H()
+   6. PLAYER MODAL ............... line ~670
+      - fetchPlayerLastGames()
+      - openPlayerModal()
+      - renderPlayerModalChart()
+   7. NBA-ONLY: RESEARCH TAB ..... line ~864
+      - fetchNBAStat()         ← NBA.com API (CORS-blocked, 1s timeout)
+      - fetchPlayerResearchData() ← NBA season strings, NBA.com advanced stats
+      - renderResearchTab()    ← hardcoded PTS/FGA/MIN references
+   8. ROSTER FETCH ............... line ~1118
+   9. RENDER FUNCTIONS ........... line ~1156
+      - renderOverview()
+      - renderRoster()
+      - renderForm() + charts
+      - renderH2H() + charts
+      - renderProps() (Props Scout)
+  10. AI PLAYS (Claude API) ...... line ~1861
+      - buildGameContext()
+      - generateAIPlays()
+      - renderAIPlays()
+      - discussUserPlay()
+  11. UTILITIES .................. line ~2102
+      - switchTab()
+      - chartOpts()
+
+   SPORT-SPECIFIC CODE INDEX
+   ─────────────────────────
+   Sport configs live in /sports/*.js (nba.js, mlb.js, nhl.js, ncaab.js).
+   Those define statCategories and propsStats per sport via window.SportConfig.
+
+   NBA-ONLY code in this file:
+     • fetchPlayerPropData()     — hardcoded PTS/REB/AST/FGA/MIN
+     • fetchNBAStat()            — NBA.com stats API
+     • fetchPlayerResearchData() — NBA.com advanced stats, NBA season format
+     • renderResearchTab()       — PTS/FGA/MIN splits, verdicts
+
+   NFL/NCAAFB-ONLY code:
+     • getSeasonYear()           — fall-start season logic (month < 8)
+
+   Everything else is sport-agnostic, driven by SportConfig.
+
 ═══════════════════════════════════════════════════════════ */
 /* global Chart */
 
-/* ── STATE ──────────────────────────────────────────────── */
+/* ── 1. STATE ──────────────────────────────────────────── */
 const S = {
   apiKey: localStorage.getItem('piq_key') || '',
   gameData: null,   // full fetched game context
@@ -318,7 +375,10 @@ function setStep(idx) {
   });
 }
 
-/* ── ESPN FETCH HELPER ──────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════
+   4. ESPN FETCH LAYER (ALL SPORTS)
+   All functions here are sport-agnostic unless noted.
+═══════════════════════════════════════════════════════════ */
 async function espn(url) {
   try {
     const r = await fetch(url, { cache: 'no-store' });
@@ -345,16 +405,16 @@ function renderOddsStrip(g) {
 }
 
 /* ── SEASON YEAR HELPER ─────────────────────────────────── */
+/* SPORT-SPECIFIC: NFL/NCAAFB use fall-start season logic   */
 function getSeasonYear(sportKey) {
   const now = new Date();
   const year = now.getFullYear();
   const month = now.getMonth() + 1;
-  // NFL and NCAAF use the year the season *started* (fall)
-  // Before August, the most recent season started last year
+  // ▸ NFL / NCAAFB: season starts in fall, so before August → last year
   if (sportKey === 'nfl' || sportKey === 'ncaafb') {
     return month < 8 ? year - 1 : year;
   }
-  // NBA, NHL, NCAAB, MLB use current calendar year
+  // ▸ NBA / NHL / NCAAB / MLB: current calendar year
   return year;
 }
 
@@ -481,7 +541,13 @@ async function fetchTeamStats(sportKey, teamId) {
   return Object.keys(result).length ? result : null;
 }
 
-/* ── PLAYER PROP DATA (last 10 games: MIN, PTS, FGA, REB, AST) ── */
+/* ═══════════════════════════════════════════════════════════
+   5. NBA-SPECIFIC FETCHERS
+   These functions use hardcoded NBA stat labels (PTS, REB,
+   AST, FGA, MIN). To support other sports, refactor to use
+   SportConfig stat categories instead.
+═══════════════════════════════════════════════════════════ */
+/* ── PLAYER PROP DATA (NBA: MIN, PTS, FGA, REB, AST) ──── */
 async function fetchPlayerPropData(sportKey, teamId, athleteId) {
   const sp = SPORTS.find(s => s.key === sportKey);
   if (!sp) return [];
@@ -666,7 +732,11 @@ async function fetchH2H(gameInfo) {
   });
 }
 
-/* ── PLAYER MODAL ───────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════
+   6. PLAYER MODAL (ALL SPORTS)
+   Modal that opens when you click a player name.
+   Uses SportConfig for stat categories (sport-agnostic).
+═══════════════════════════════════════════════════════════ */
 async function fetchPlayerLastGames(sportKey, teamId, athleteId) {
   const sp = SPORTS.find(s => s.key === sportKey);
   if (!sp) return [];
@@ -860,7 +930,15 @@ function closePlayerModal(e) {
   if (S.charts.playerModal) { S.charts.playerModal.destroy(); delete S.charts.playerModal; }
 }
 
-/* ── PLAYER RESEARCH TAB ────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════
+   7. NBA-ONLY: PLAYER RESEARCH TAB
+   Everything below until "ROSTER" is NBA-specific:
+   - fetchNBAStat() calls NBA.com API (CORS-blocked in browser)
+   - fetchPlayerResearchData() uses NBA season format "2025-26"
+   - renderResearchTab() hardcodes PTS, FGA, MIN splits & verdict
+   To add research for other sports, create sport-specific
+   versions of these functions.
+═══════════════════════════════════════════════════════════ */
 async function fetchNBAStat(url) {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), 1000);
@@ -1115,7 +1193,9 @@ function renderResearchTab(data, gameInfo, injuries) {
     </div>`;
 }
 
-/* ── ROSTER ─────────────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════
+   8. ROSTER FETCH (ALL SPORTS)
+═══════════════════════════════════════════════════════════ */
 async function fetchRoster(sportKey, teamId) {
   const sp = SPORTS.find(s => s.key === sportKey);
   if (!sp) return [];
@@ -1154,7 +1234,9 @@ async function fetchRoster(sportKey, teamId) {
 }
 
 /* ═══════════════════════════════════════════════════════════
-   RENDER FUNCTIONS
+   9. RENDER FUNCTIONS (ALL SPORTS)
+   All renderers are sport-agnostic — they read SportConfig
+   dynamically for stat categories, labels, and chart data.
 ═══════════════════════════════════════════════════════════ */
 
 /* ── OVERVIEW ───────────────────────────────────────────── */
@@ -1714,7 +1796,8 @@ function switchH2HStat(chartId, stat, btn) {
   renderH2HChart(chartId, S.gameData.h2h, side, stat);
 }
 
-/* ── PROP CONTEXT TAB ───────────────────────────────────── */
+/* ── PROPS SCOUT TAB (ALL SPORTS) ──────────────────────── */
+/* Injury data + team stats. Uses SportConfig.propsStats    */
 async function renderProps(data) {
   const { gameInfo, awayForm, homeForm } = data;
   const el = document.getElementById('propsContent');
@@ -1859,7 +1942,9 @@ async function renderProps(data) {
 
 
 /* ═══════════════════════════════════════════════════════════
-   AI PLAYS — Claude Analysis
+   10. AI PLAYS — Claude API (ALL SPORTS)
+   Sends game context to Claude Haiku for betting analysis.
+   Sport-agnostic — uses whatever data is in S.gameData.
 ═══════════════════════════════════════════════════════════ */
 function buildGameContext(data) {
   const { gameInfo, injuries, awayForm, homeForm, h2h } = data;
@@ -2009,9 +2094,7 @@ function renderAIPlays(plays) {
   }).join('');
 }
 
-/* ═══════════════════════════════════════════════════════════
-   DISCUSS USER'S PLAY
-═══════════════════════════════════════════════════════════ */
+/* ── DISCUSS USER'S PLAY (ALL SPORTS) ──────────────────── */
 async function discussUserPlay() {
   const play = document.getElementById('userPlay').value.trim();
   if (!play) return;
@@ -2099,6 +2182,9 @@ Respond ONLY in this JSON (no markdown):
   }
 }
 
+/* ═══════════════════════════════════════════════════════════
+   11. UTILITIES
+═══════════════════════════════════════════════════════════ */
 /* ── TAB SWITCH ─────────────────────────────────────────── */
 function switchTab(tab) {
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
