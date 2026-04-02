@@ -334,7 +334,9 @@ async function startAnalysis(gameInfo) {
 
     // Step 4 — H2H
     setStep(3);
-    const h2h = await fetchH2H(gameInfo);
+    const h2hResult = await fetchH2H(gameInfo);
+    const h2h = h2hResult.games;
+    const h2hSummaries = h2hResult.summaries;
 
     // Step 5 — Rosters
     setStep(4);
@@ -343,7 +345,7 @@ async function startAnalysis(gameInfo) {
       fetchRoster(gameInfo.sportKey, gameInfo.homeTeamId),
     ]);
 
-    S.gameData = { gameInfo, injuries, awayForm, homeForm, h2h, awayRoster, homeRoster };
+    S.gameData = { gameInfo, injuries, awayForm, homeForm, h2h, h2hSummaries, awayRoster, homeRoster };
 
     renderOverview(S.gameData);
     renderRoster(S.gameData);
@@ -351,7 +353,7 @@ async function startAnalysis(gameInfo) {
     renderH2H(S.gameData);
     renderProps(S.gameData);
 
-    // NBA-only: fetch and render starting lineups with stats
+    // NBA-only: fetch and render starting lineups with H2H stats
     const lineupsTab = document.getElementById('tabLineups');
     if (gameInfo.sportKey === 'nba') {
       lineupsTab.style.display = '';
@@ -359,11 +361,23 @@ async function startAnalysis(gameInfo) {
         fetchLineups(gameInfo.sportKey, gameInfo.awayTeamId),
         fetchLineups(gameInfo.sportKey, gameInfo.homeTeamId),
       ]);
-      // Enrich with per-player season stats for matchup comparison
-      [awayLineup, homeLineup] = await Promise.all([
-        enrichLineupsWithStats(awayLineup),
-        enrichLineupsWithStats(homeLineup),
-      ]);
+      // Enrich with per-player H2H stats — only games where BOTH players in a matchup played
+      if (h2hSummaries?.length) {
+        const enriched = enrichLineupsWithH2HStats(awayLineup, homeLineup, h2hSummaries);
+        awayLineup = enriched.away;
+        homeLineup = enriched.home;
+      }
+      // Fallback to season stats if no H2H data exists
+      const hasH2HStats = awayLineup.some(p => p.stats) || homeLineup.some(p => p.stats);
+      if (!hasH2HStats) {
+        [awayLineup, homeLineup] = await Promise.all([
+          enrichLineupsWithStats(awayLineup),
+          enrichLineupsWithStats(homeLineup),
+        ]);
+        S.gameData.lineupStatsType = 'season';
+      } else {
+        S.gameData.lineupStatsType = 'h2h';
+      }
       S.gameData.awayLineup = awayLineup;
       S.gameData.homeLineup = homeLineup;
       renderLineups(S.gameData);
@@ -713,7 +727,7 @@ async function fetchH2H(gameInfo) {
     )
   );
 
-  return h2h.map((ev, i) => {
+  const games = h2h.map((ev, i) => {
     const comp = ev.competitions[0];
     const awayC = comp.competitors.find(c => c.homeAway === 'away');
     const homeC = comp.competitors.find(c => c.homeAway === 'home');
@@ -755,6 +769,9 @@ async function fetchH2H(gameInfo) {
       homeLeader: getTeamLeaders(gameInfo.homeAbbr),
     };
   });
+
+  // Return both structured games and raw summaries (for boxscore extraction in lineups)
+  return { games, summaries };
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -1337,6 +1354,100 @@ async function enrichLineupsWithStats(lineup) {
     lineup.map(p => fetchPlayerSeasonStats(p.athleteId))
   );
   return lineup.map((p, i) => ({ ...p, stats: results[i] }));
+}
+
+/* ── H2H PLAYER STATS (from boxscores) ────────────────────
+   Extracts per-player stats from H2H game summaries.
+   Only counts games where BOTH players in a position matchup
+   actually played — so the GP count matches and it's a true
+   head-to-head comparison.
+   ────────────────────────────────────────────────────────── */
+const H2H_STAT_MAP = {
+  'MIN': 'avgMinutes', 'PTS': 'avgPoints', 'REB': 'avgRebounds',
+  'AST': 'avgAssists', 'STL': 'avgSteals', 'BLK': 'avgBlocks',
+  'TO': 'avgTurnovers', 'FG%': 'fieldGoalPct',
+};
+const H2H_LABELS = Object.keys(H2H_STAT_MAP);
+
+// Check if a player actually played (not DNP) in a given summary
+function playerPlayedInGame(summary, athleteId) {
+  if (!summary?.boxscore?.players || !athleteId) return false;
+  for (const teamData of summary.boxscore.players) {
+    for (const grp of teamData.statistics || []) {
+      const ath = grp.athletes?.find(a => a.athlete?.id == athleteId);
+      if (!ath) continue;
+      if (ath.didNotPlay || !ath.stats?.length || ath.stats?.[0] === 'DNP' || ath.stats?.[0] === '0:00') return false;
+      return true;
+    }
+  }
+  return false;
+}
+
+// Extract one player's stats from a single game summary
+function extractPlayerGameStats(summary, athleteId) {
+  if (!summary?.boxscore?.players || !athleteId) return null;
+  for (const teamData of summary.boxscore.players) {
+    for (const grp of teamData.statistics || []) {
+      const lbls = grp.labels || [];
+      const ath = grp.athletes?.find(a => a.athlete?.id == athleteId);
+      if (!ath) continue;
+      if (ath.didNotPlay || !ath.stats?.length || ath.stats?.[0] === 'DNP' || ath.stats?.[0] === '0:00') return null;
+      const game = {};
+      H2H_LABELS.forEach(lbl => {
+        const idx = lbls.indexOf(lbl);
+        if (idx > -1 && ath.stats[idx] != null) {
+          const val = parseFloat(String(ath.stats[idx]));
+          if (!isNaN(val)) game[H2H_STAT_MAP[lbl]] = val;
+        }
+      });
+      return Object.keys(game).length > 0 ? game : null;
+    }
+  }
+  return null;
+}
+
+// Average an array of per-game stat objects
+function averageStats(gameStats) {
+  if (!gameStats.length) return null;
+  const avg = {};
+  const allKeys = new Set(gameStats.flatMap(g => Object.keys(g)));
+  allKeys.forEach(key => {
+    const vals = gameStats.map(g => g[key]).filter(v => v != null);
+    if (vals.length) avg[key] = vals.reduce((a, b) => a + b, 0) / vals.length;
+  });
+  avg._gp = gameStats.length;
+  return avg;
+}
+
+// Enrich both lineups position-by-position using only shared H2H games
+function enrichLineupsWithH2HStats(awayLineup, homeLineup, summaries) {
+  if (!summaries?.length) return { away: awayLineup, home: homeLineup };
+  const posOrder = ['PG', 'SG', 'SF', 'PF', 'C'];
+
+  const enrichedAway = awayLineup.map(p => ({ ...p }));
+  const enrichedHome = homeLineup.map(p => ({ ...p }));
+
+  for (const pos of posOrder) {
+    const awayP = enrichedAway.find(p => p.pos === pos);
+    const homeP = enrichedHome.find(p => p.pos === pos);
+    if (!awayP || !homeP) continue;
+
+    // Find games where BOTH players actually played
+    const sharedGames = summaries.filter(s =>
+      playerPlayedInGame(s, awayP.athleteId) && playerPlayedInGame(s, homeP.athleteId)
+    );
+
+    if (!sharedGames.length) continue;
+
+    // Extract stats from only those shared games
+    const awayGameStats = sharedGames.map(s => extractPlayerGameStats(s, awayP.athleteId)).filter(Boolean);
+    const homeGameStats = sharedGames.map(s => extractPlayerGameStats(s, homeP.athleteId)).filter(Boolean);
+
+    awayP.stats = averageStats(awayGameStats);
+    homeP.stats = averageStats(homeGameStats);
+  }
+
+  return { away: enrichedAway, home: enrichedHome };
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -2076,7 +2187,7 @@ async function renderProps(data) {
 
 
 /* ── LINEUPS (NBA ONLY) ────────────────────────────────── */
-function renderLineups({ gameInfo, awayLineup, homeLineup, injuries }) {
+function renderLineups({ gameInfo, awayLineup, homeLineup, injuries, lineupStatsType }) {
   const el = document.getElementById('lineupsContent');
   if (!el) return;
 
@@ -2164,7 +2275,8 @@ function renderLineups({ gameInfo, awayLineup, homeLineup, injuries }) {
       if (!p) return `<div class="lu-player-side"><div class="lu-player-empty">—</div></div>`;
       const inj = injStatus(p.name);
       const injBadge = inj ? `<span class="lu-inj-badge" style="color:${injColor(inj)};border-color:${injColor(inj)}">${inj}</span>` : '';
-      const gp = p.stats?._gp ? `<span class="lu-gp">${p.stats._gp} GP</span>` : '';
+      const gpLabel = lineupStatsType === 'h2h' ? 'H2H' : 'GP';
+      const gp = p.stats?._gp ? `<span class="lu-gp">${p.stats._gp} ${gpLabel}</span>` : '';
       return `
         <div class="lu-player-side ${align}">
           <div class="lu-hs-wrap" style="border-color:${color}">
@@ -2207,7 +2319,7 @@ function renderLineups({ gameInfo, awayLineup, homeLineup, injuries }) {
   el.innerHTML = `
     <div class="lu-header">
       <div class="lu-title">Starting Lineups</div>
-      <div class="lu-subtitle">Projected starters · ESPN depth charts · Season averages</div>
+      <div class="lu-subtitle">Projected starters · ESPN depth charts · ${lineupStatsType === 'h2h' ? 'Head-to-head averages' : 'Season averages'}</div>
     </div>
 
     <!-- Team headers -->

@@ -1610,14 +1610,111 @@ body {
   font-family: var(--font-m);
 }
 
+/* Clickable matchup rows */
+.lu-matchup-clickable {
+  cursor: pointer; transition: background 0.15s ease, border-color 0.15s ease;
+  flex-direction: column;
+}
+.lu-matchup-clickable:hover {
+  background: var(--bg3); border-color: var(--border2);
+}
+
+/* Matchup header (player vs player row inside expandable card) */
+.lu-matchup-header {
+  display: flex; align-items: center; gap: 12px; width: 100%;
+}
+
+/* Position column (badge + edge) */
+.lu-pos-col {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  flex-shrink: 0;
+}
+
+/* Alignment helpers */
+.lu-align-right { flex-direction: row-reverse; text-align: right; }
+.lu-align-right .lu-player-info { align-items: flex-end; }
+
+/* Edge badge */
+.lu-edge-badge {
+  font-family: var(--font-m); font-size: 9px; font-weight: 600;
+  letter-spacing: 0.06em; text-transform: uppercase;
+  padding: 2px 6px; border-radius: 4px;
+  white-space: nowrap;
+}
+.lu-edge-away {
+  color: var(--blue); background: rgba(77,139,255,0.12); border: 1px solid rgba(77,139,255,0.25);
+}
+.lu-edge-home {
+  color: var(--lime); background: rgba(212,245,60,0.10); border: 1px solid rgba(212,245,60,0.20);
+}
+.lu-edge-even {
+  color: var(--text3); background: rgba(255,255,255,0.04); border: 1px solid var(--border);
+}
+
+/* Expand chevron */
+.lu-expand-chevron {
+  font-size: 16px; color: var(--text3);
+  transition: transform 0.2s ease;
+  flex-shrink: 0; margin-left: auto;
+}
+.lu-matchup-expanded .lu-expand-chevron {
+  transform: rotate(90deg); color: var(--lime);
+}
+
+/* Games played badge */
+.lu-gp {
+  font-family: var(--font-m); font-size: 9px; color: var(--text3);
+  background: var(--bg3); border-radius: 3px; padding: 1px 4px;
+}
+
+/* Stat comparison (hidden by default, shown on expand) */
+.lu-matchup-stats {
+  display: none; flex-direction: column; gap: 3px;
+  width: 100%; padding-top: 10px;
+  border-top: 1px solid var(--border);
+  margin-top: 10px;
+}
+.lu-matchup-expanded .lu-matchup-stats {
+  display: flex;
+  animation: fadeIn 0.15s ease both;
+}
+
+/* Individual stat row */
+.lu-stat-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 5px 8px; border-radius: 6px;
+  background: var(--bg); transition: background 0.15s ease;
+}
+.lu-stat-row:hover { background: var(--bg3); }
+.lu-stat-val {
+  font-family: var(--font-m); font-size: 13px; font-weight: 600;
+  min-width: 48px;
+}
+.lu-stat-val:first-child { text-align: left; }
+.lu-stat-val:last-child { text-align: right; }
+.lu-stat-label {
+  font-family: var(--font-m); font-size: 10px; color: var(--text3);
+  text-transform: uppercase; letter-spacing: 0.1em;
+  text-align: center; flex: 1;
+}
+
 /* Mobile */
+@media (max-width: 768px) {
+  .lu-stat-val { font-size: 12px; min-width: 40px; }
+  .lu-stat-label { font-size: 9px; }
+  .lu-stat-row { padding: 4px 6px; }
+  .lu-edge-badge { font-size: 8px; padding: 2px 5px; }
+}
 @media (max-width: 480px) {
   .lu-hs-wrap { width: 38px; height: 38px; }
   .lu-p-name { font-size: 11px; }
   .lu-p-meta { font-size: 10px; }
   .lu-pos-badge { font-size: 14px; padding: 3px 8px; min-width: 32px; }
   .lu-matchup-row { padding: 10px 10px; gap: 8px; }
+  .lu-matchup-header { gap: 8px; }
   .lu-th-name { font-size: 22px; }
   .lu-th-logo { width: 26px; height: 26px; }
   .lu-teams-header { padding: 10px 14px; }
+  .lu-stat-val { font-size: 11px; min-width: 36px; }
+  .lu-expand-chevron { font-size: 14px; }
 }
