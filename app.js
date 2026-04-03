@@ -411,7 +411,10 @@ async function startAnalysis(gameInfo) {
     setStep(5);
     loader.classList.add('hidden');
     document.getElementById('tabBar').classList.remove('hidden');
-    switchTab('overview');
+    // Restore last active tab on reload, default to overview on fresh analysis
+    const savedTab = sessionStorage.getItem('piq_tab');
+    const isReload = sessionStorage.getItem('piq_game');
+    switchTab(isReload && savedTab ? savedTab : 'overview');
 
     generateAIPlays(S.gameData);
 
@@ -1605,15 +1608,10 @@ async function fetchFullDepthChart(sportKey, teamId) {
   return players;
 }
 
-// Build athleteId -> position map using depth chart (exact PG/SG/SF/PF/C) + roster fallback
-function buildPositionMap(roster, depthChart) {
+// Build athleteId -> position map from depth chart ONLY
+// Depth chart reflects how the team actually uses each player (PG/SG/SF/PF/C)
+function buildPositionMap(depthChart) {
   const map = new Map();
-  // First: roster positions (normalized) as fallback
-  for (const p of roster || []) {
-    const norm = normalizePosition(p.pos);
-    if (p.id && norm) map.set(String(p.id), norm);
-  }
-  // Then: depth chart overrides with exact positions (PG, SG, SF, PF, C)
   for (const p of depthChart || []) {
     if (p.athleteId && p.pos) map.set(String(p.athleteId), p.pos);
   }
@@ -1621,14 +1619,17 @@ function buildPositionMap(roster, depthChart) {
 }
 
 // Compute positional defense: what each position scores against this team in H2H
+// Also tracks per-player scoring breakdowns for each position
 function computePositionalDefense(summaries, defendingTeamId, attackingRosterPosMap, currentRosterIds) {
   const posData = {};
   const positions = ['PG', 'SG', 'SF', 'PF', 'C'];
   positions.forEach(p => { posData[p] = { totalPts: 0, games: 0 }; });
 
+  // Per-player tracking: athleteId -> { name, shortName, pos, totalPts, gp, headshotUrl }
+  const playerMap = new Map();
+
   for (const summary of summaries || []) {
     if (!summary?.boxscore?.players) continue;
-    // Find the attacking team's boxscore (not the defending team)
     const attackingData = summary.boxscore.players.find(p => String(p.team?.id) !== String(defendingTeamId));
     if (!attackingData) continue;
 
@@ -1642,13 +1643,29 @@ function computePositionalDefense(summaries, defendingTeamId, attackingRosterPos
       if (ptsIdx === -1) continue;
 
       for (const ath of grp.athletes || []) {
-        if (!ath.athlete?.id || ath.didNotPlay) continue;
-        if (currentRosterIds && !currentRosterIds.has(String(ath.athlete.id))) continue;
-        const pos = attackingRosterPosMap.get(String(ath.athlete.id));
+        const id = ath.athlete?.id;
+        if (!id || ath.didNotPlay) continue;
+        if (currentRosterIds && !currentRosterIds.has(String(id))) continue;
+        const pos = attackingRosterPosMap.get(String(id));
         if (!pos || !posData[pos]) continue;
         const pts = parseFloat(String(ath.stats?.[ptsIdx])) || 0;
         gamePosPts[pos] += pts;
         hasData = true;
+
+        // Track individual player scoring
+        if (!playerMap.has(id)) {
+          playerMap.set(id, {
+            athleteId: id,
+            name: ath.athlete?.displayName || ath.athlete?.shortName || '?',
+            shortName: ath.athlete?.shortName || ath.athlete?.displayName?.split(' ').pop() || '?',
+            pos,
+            totalPts: 0, gp: 0,
+            headshotUrl: `https://a.espncdn.com/i/headshots/nba/players/full/${id}.png`,
+          });
+        }
+        const p = playerMap.get(id);
+        p.totalPts += pts;
+        p.gp++;
       }
     }
 
@@ -1666,7 +1683,17 @@ function computePositionalDefense(summaries, defendingTeamId, attackingRosterPos
     posData[p].avg = posData[p].games > 0 ? posData[p].totalPts / posData[p].games : 0;
     if (posData[p].avg > maxAvg) { maxAvg = posData[p].avg; weakest = p; }
   });
-  return { positions: posData, weakest };
+
+  // Build per-position player lists sorted by avg pts descending
+  const playersByPos = {};
+  positions.forEach(pos => {
+    playersByPos[pos] = Array.from(playerMap.values())
+      .filter(p => p.pos === pos && p.gp > 0)
+      .map(p => ({ ...p, avg: p.totalPts / p.gp }))
+      .sort((a, b) => b.avg - a.avg);
+  });
+
+  return { positions: posData, weakest, playersByPos };
 }
 
 // Batch fetch season stats for an array of player objects
@@ -1735,8 +1762,8 @@ async function buildEdgeFinderData(gameData) {
     fetchFullDepthChart(gameInfo.sportKey, gameInfo.awayTeamId),
     fetchFullDepthChart(gameInfo.sportKey, gameInfo.homeTeamId),
   ]);
-  const awayPosMap = buildPositionMap(awayRoster, awayDepth);
-  const homePosMap = buildPositionMap(homeRoster, homeDepth);
+  const awayPosMap = buildPositionMap(awayDepth);
+  const homePosMap = buildPositionMap(homeDepth);
 
   // 3. Filter to CURRENT roster only (drop traded/released players) + 15+ avg minutes
   const awayRosterIds = new Set((awayRoster || []).map(p => String(p.id)));
@@ -2762,14 +2789,27 @@ function renderEdgeFinder(edgeData, gameData) {
         ${positions.map(pos => {
           const d = defense.positions[pos];
           const isWeak = defense.weakest === pos;
+          const players = defense.playersByPos?.[pos] || [];
           return `
-            <div class="ef-pos-row ${isWeak ? 'ef-pos-weak' : ''}">
-              <span class="ef-pos-label">${pos}</span>
-              <div class="ef-pos-bar-wrap">
-                <div class="ef-pos-bar" style="width:${Math.min(100, (d.avg / 35) * 100)}%;background:${isWeak ? 'var(--red)' : 'var(--text3)'}"></div>
+            <div class="ef-pos-group">
+              <div class="ef-pos-row ${isWeak ? 'ef-pos-weak' : ''}">
+                <span class="ef-pos-label">${pos}</span>
+                <div class="ef-pos-bar-wrap">
+                  <div class="ef-pos-bar" style="width:${Math.min(100, (d.avg / 35) * 100)}%;background:${isWeak ? 'var(--red)' : 'var(--text3)'}"></div>
+                </div>
+                <span class="ef-pos-val ${isWeak ? 'ef-pos-val-weak' : ''}">${d.avg.toFixed(1)}</span>
+                ${isWeak ? '<span class="ef-weak-tag">WEAKEST</span>' : ''}
               </div>
-              <span class="ef-pos-val ${isWeak ? 'ef-pos-val-weak' : ''}">${d.avg.toFixed(1)}</span>
-              ${isWeak ? '<span class="ef-weak-tag">WEAKEST</span>' : ''}
+              ${players.length ? `
+                <div class="ef-pos-players">
+                  ${players.map((p, i) => `
+                    <div class="ef-pos-player ${i === 0 && isWeak ? 'ef-pos-player-top' : ''}">
+                      <img class="ef-pos-player-hs" src="${p.headshotUrl}" alt="${p.shortName}" onerror="this.style.display='none'">
+                      <span class="ef-pos-player-name">${p.shortName}</span>
+                      <span class="ef-pos-player-avg ${i === 0 && isWeak ? 'ef-pos-player-avg-top' : ''}">${p.avg.toFixed(1)}</span>
+                      <span class="ef-pos-player-gp">${p.gp}g</span>
+                    </div>`).join('')}
+                </div>` : ''}
             </div>`;
         }).join('')}
       </div>`;
@@ -3111,6 +3151,8 @@ function switchTab(tab) {
   document.querySelectorAll('.tab-pane').forEach(p => p.classList.add('hidden'));
   document.querySelector(`[data-tab="${tab}"]`)?.classList.add('active');
   document.getElementById(`tab-${tab}`)?.classList.remove('hidden');
+  // Persist active tab so Live Server reloads don't reset to overview
+  sessionStorage.setItem('piq_tab', tab);
 }
 
 /* ── CHART DEFAULTS ─────────────────────────────────────── */
