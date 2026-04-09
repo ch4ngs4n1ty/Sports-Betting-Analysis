@@ -759,10 +759,9 @@ function renderEdgeFinder(edgeData, gameData) {
   // Store for click handler access
   S._edgeAllPlayers = allEdges;
 
-  const colCount = 3 + EDGE_DISPLAY_STATS.length; // player + GP + stats + rating
-
+  // Desktop table rows
   const playerRows = allEdges.map((p, idx) => `
-    <tr class="ef-row-clickable ${p.isStarter ? 'ef-starter' : ''}" onclick="toggleEdgeDetail(${idx}, ${colCount})">
+    <tr class="ef-row-clickable ${p.isStarter ? 'ef-starter' : ''}" onclick="toggleEdgeDetail(${idx})">
       <td class="ef-player-cell">
         <img class="ef-row-hs" src="${p.headshotUrl}" alt="${p.shortName}" onerror="this.style.display='none'">
         <div class="ef-row-info">
@@ -782,6 +781,31 @@ function renderEdgeFinder(edgeData, gameData) {
       }).join('')}
       <td class="ef-td-center">${p.rating ? `<span class="${p.rating === 'STRONG' ? 'ef-badge-strong' : 'ef-badge-notable'}">${p.rating}</span>` : ''}</td>
     </tr>`).join('');
+
+  // Mobile card list — compact, no horizontal scroll
+  const playerCards = allEdges.map((p, idx) => {
+    const topStats = EDGE_DISPLAY_STATS
+      .filter(cfg => p.edges[cfg.key]?.edge != null)
+      .sort((a, b) => Math.abs(p.edges[b.key].edge) - Math.abs(p.edges[a.key].edge))
+      .slice(0, 3);
+    return `
+      <div class="ef-card" onclick="toggleEdgeDetail(${idx})">
+        <div class="ef-card-left">
+          <img class="ef-card-hs" src="${p.headshotUrl}" alt="${p.shortName}" onerror="this.style.display='none'">
+          <div class="ef-card-info">
+            <span class="ef-card-name">${p.shortName}</span>
+            <span class="ef-card-meta" style="color:${p.teamColor}">${p.teamAbbr} · ${p.pos} · ${p.gp}g</span>
+          </div>
+        </div>
+        <div class="ef-card-right">
+          ${topStats.map(cfg => {
+            const e = p.edges[cfg.key];
+            return `<span class="ef-card-edge ${edgeColor(e.edge)}">${cfg.label} ${fmtEdge(e.edge)}</span>`;
+          }).join('')}
+          ${p.rating ? `<span class="${p.rating === 'STRONG' ? 'ef-badge-strong' : 'ef-badge-notable'}">${p.rating}</span>` : ''}
+        </div>
+      </div>`;
+  }).join('');
 
   el.innerHTML = `
     <div class="ef-header">
@@ -807,10 +831,10 @@ function renderEdgeFinder(edgeData, gameData) {
       </div>
     </div>
 
-    <!-- All Player Edges -->
+    <!-- All Player Edges — desktop table -->
     <div class="ef-section">
       <div class="ef-section-title">All Player Edges</div>
-      <div class="ef-table-wrap">
+      <div class="ef-table-wrap ef-desktop-only">
         <table class="ef-table">
           <thead>
             <tr>
@@ -822,6 +846,10 @@ function renderEdgeFinder(edgeData, gameData) {
           </thead>
           <tbody>${playerRows}</tbody>
         </table>
+      </div>
+      <!-- All Player Edges — mobile cards -->
+      <div class="ef-card-list ef-mobile-only">
+        ${playerCards}
       </div>
     </div>`;
 }
@@ -837,7 +865,7 @@ function destroyEdgeDetailCharts(idx) {
   });
 }
 
-function toggleEdgeDetail(idx, colCount) {
+function toggleEdgeDetail(idx) {
   const existing = document.getElementById(`ef-detail-${idx}`);
   if (existing) {
     destroyEdgeDetailCharts(idx);
@@ -846,10 +874,10 @@ function toggleEdgeDetail(idx, colCount) {
   }
 
   // Close any other open detail
-  document.querySelectorAll('.ef-detail-row').forEach(row => {
-    const oldIdx = row.dataset.idx;
+  document.querySelectorAll('.ef-detail-panel-outer').forEach(el => {
+    const oldIdx = el.dataset.idx;
     destroyEdgeDetailCharts(oldIdx);
-    row.remove();
+    el.remove();
   });
 
   const p = S._edgeAllPlayers?.[idx];
@@ -873,57 +901,79 @@ function toggleEdgeDetail(idx, colCount) {
     `<button class="ef-detail-stat-btn${i === 0 ? ' active' : ''}" onclick="event.stopPropagation(); switchEdgeLast5Stat(${idx}, '${c.key}', this)">${c.label}</button>`
   ).join('');
 
-  // Insert detail row after the clicked row
-  const clickedRows = document.querySelectorAll('.ef-row-clickable');
-  const clickedRow = clickedRows[idx];
-  if (!clickedRow) return;
-
-  const detailRow = document.createElement('tr');
-  detailRow.id = `ef-detail-${idx}`;
-  detailRow.className = 'ef-detail-row';
-  detailRow.dataset.idx = idx;
-  detailRow.innerHTML = `
-    <td colspan="${colCount}" class="ef-detail-cell">
-      <div class="ef-detail-panel">
-        <div class="ef-detail-header">
-          <img class="ef-detail-hs" src="${p.headshotUrl}" alt="${p.shortName}" onerror="this.style.display='none'">
-          <div class="ef-detail-info">
-            <span class="ef-detail-name">${p.name}</span>
-            <span class="ef-detail-meta" style="color:${p.teamColor}">${p.teamAbbr} · ${p.pos} · ${p.gp} H2H Games</span>
-          </div>
+  // Build the inner panel HTML (shared between desktop and mobile)
+  const panelHTML = `
+    <div class="ef-detail-panel">
+      <div class="ef-detail-header">
+        <img class="ef-detail-hs" src="${p.headshotUrl}" alt="${p.shortName}" onerror="this.style.display='none'">
+        <div class="ef-detail-info">
+          <span class="ef-detail-name">${p.name}</span>
+          <span class="ef-detail-meta" style="color:${p.teamColor}">${p.teamAbbr} · ${p.pos} · ${p.gp} H2H Games</span>
         </div>
-
-        <!-- H2H Games Section -->
-        <div class="ef-detail-section-label">H2H Games</div>
-        <div class="ef-detail-controls">
-          <span class="ef-detail-label">Stat</span>
-          <div class="ef-detail-toggle" id="efH2hToggle_${idx}">${statBtns}</div>
-        </div>
-        <div class="ef-detail-chart-wrap">
-          <canvas id="efDetailChart_${idx}" height="180"></canvas>
-        </div>
-        <div class="ef-detail-summary" id="efDetailSummary_${idx}"></div>
-
-        <!-- Last 5 Games Section -->
-        <div class="ef-detail-section-label" style="margin-top:16px">Last 5 Games</div>
-        <div class="ef-detail-controls">
-          <span class="ef-detail-label">Stat</span>
-          <div class="ef-detail-toggle" id="efL5Toggle_${idx}">${last5Btns}</div>
-        </div>
-        <div class="ef-detail-chart-wrap" id="efLast5Wrap_${idx}">
-          <div class="ef-detail-loading" id="efLast5Loading_${idx}">
-            <div class="mini-spin"></div> Loading last 5 games…
-          </div>
-          <canvas id="efLast5Chart_${idx}" height="180" style="display:none"></canvas>
-        </div>
-        <div class="ef-detail-summary" id="efLast5Summary_${idx}"></div>
       </div>
-    </td>`;
 
-  clickedRow.after(detailRow);
+      <!-- H2H Games Section -->
+      <div class="ef-detail-section-label">H2H Games</div>
+      <div class="ef-detail-controls">
+        <span class="ef-detail-label">Stat</span>
+        <div class="ef-detail-toggle" id="efH2hToggle_${idx}">${statBtns}</div>
+      </div>
+      <div class="ef-detail-chart-wrap">
+        <canvas id="efDetailChart_${idx}" height="140"></canvas>
+      </div>
+      <div class="ef-detail-summary" id="efDetailSummary_${idx}"></div>
+
+      <!-- Last 5 Games Section -->
+      <div class="ef-detail-section-label" style="margin-top:10px">Last 5 Games</div>
+      <div class="ef-detail-controls">
+        <span class="ef-detail-label">Stat</span>
+        <div class="ef-detail-toggle" id="efL5Toggle_${idx}">${last5Btns}</div>
+      </div>
+      <div class="ef-detail-chart-wrap" id="efLast5Wrap_${idx}">
+        <div class="ef-detail-loading" id="efLast5Loading_${idx}">
+          <div class="mini-spin"></div> Loading last 5 games…
+        </div>
+        <canvas id="efLast5Chart_${idx}" height="140" style="display:none"></canvas>
+      </div>
+      <div class="ef-detail-summary" id="efLast5Summary_${idx}"></div>
+    </div>`;
+
+  // Detect layout: mobile cards vs desktop table
+  const edgesEl = document.getElementById('edgesContent');
+  if (!edgesEl) return;
+  const cardList = edgesEl.querySelector('.ef-card-list');
+  const isMobile = cardList && cardList.offsetParent !== null;
+
+  let detailEl;
+  if (isMobile) {
+    // Mobile: insert a div after the tapped card
+    const card = edgesEl.querySelectorAll('.ef-card')[idx];
+    if (!card) return;
+    detailEl = document.createElement('div');
+    detailEl.id = `ef-detail-${idx}`;
+    detailEl.className = 'ef-detail-panel-outer';
+    detailEl.dataset.idx = idx;
+    detailEl.innerHTML = panelHTML;
+    card.after(detailEl);
+  } else {
+    // Desktop: insert a <tr> directly after the clicked row inside the table
+    const clickedRow = edgesEl.querySelectorAll('.ef-row-clickable')[idx];
+    if (!clickedRow) return;
+    const colCount = clickedRow.cells.length;
+    const tr = document.createElement('tr');
+    tr.id = `ef-detail-${idx}`;
+    tr.className = 'ef-detail-panel-outer ef-detail-tr';
+    tr.dataset.idx = idx;
+    tr.innerHTML = `<td colspan="${colCount}" class="ef-detail-cell">${panelHTML}</td>`;
+    clickedRow.after(tr);
+    detailEl = tr;
+  }
 
   // Animate in
-  requestAnimationFrame(() => detailRow.classList.add('ef-detail-visible'));
+  requestAnimationFrame(() => detailEl.classList.add('ef-detail-visible'));
+
+  // Scroll the detail panel into view
+  detailEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 
   // Render H2H chart immediately
   renderEdgeDetailChart(idx, defaultStat);
@@ -985,15 +1035,15 @@ function renderEdgeDetailChart(idx, statKey) {
           backgroundColor: colors,
           borderRadius: 5,
           borderSkipped: false,
-          barPercentage: 0.7,
+          barPercentage: 0.5,
+          maxBarThickness: 48,
         },
         ...(seasonAvg != null ? [{
           type: 'line',
           label: 'Season Avg',
           data: new Array(values.length).fill(parseFloat(seasonAvg.toFixed(1))),
-          borderColor: 'rgba(255,255,255,0.25)',
-          borderWidth: 1.5,
-          borderDash: [6, 4],
+          borderColor: 'rgba(255,255,255,0.18)',
+          borderWidth: 1,
           pointRadius: 0,
           fill: false,
           tension: 0,
@@ -1002,9 +1052,8 @@ function renderEdgeDetailChart(idx, statKey) {
           type: 'line',
           label: 'H2H Avg',
           data: new Array(values.length).fill(parseFloat(h2hAvg.toFixed(1))),
-          borderColor: 'rgba(212,245,60,0.4)',
-          borderWidth: 1.5,
-          borderDash: [3, 3],
+          borderColor: 'rgba(212,245,60,0.35)',
+          borderWidth: 1,
           pointRadius: 0,
           fill: false,
           tension: 0,
@@ -1015,7 +1064,7 @@ function renderEdgeDetailChart(idx, statKey) {
       responsive: true,
       maintainAspectRatio: false,
       animation: { duration: 120 },
-      layout: { padding: { top: 24, bottom: 4 } },
+      layout: { padding: { top: 6, bottom: 2 } },
       plugins: {
         legend: { display: false },
         tooltip: {
@@ -1128,16 +1177,16 @@ function renderEdgeLast5Chart(idx, statKey) {
           backgroundColor: colors,
           borderRadius: 5,
           borderSkipped: false,
-          barPercentage: 0.7,
+          barPercentage: 0.5,
+          maxBarThickness: 48,
           minBarLength: 6,
         },
         {
           type: 'line',
           label: 'L5 Avg',
           data: new Array(values.length).fill(parseFloat(avg.toFixed(1))),
-          borderColor: 'rgba(255,255,255,0.22)',
-          borderWidth: 1.5,
-          borderDash: [5, 4],
+          borderColor: 'rgba(255,255,255,0.18)',
+          borderWidth: 1,
           pointRadius: 0,
           fill: false,
           tension: 0,
@@ -1148,7 +1197,7 @@ function renderEdgeLast5Chart(idx, statKey) {
       responsive: true,
       maintainAspectRatio: false,
       animation: { duration: 120 },
-      layout: { padding: { top: 24, bottom: 4 } },
+      layout: { padding: { top: 6, bottom: 2 } },
       plugins: {
         legend: { display: false },
         tooltip: {

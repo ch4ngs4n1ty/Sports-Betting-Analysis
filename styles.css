@@ -1981,28 +1981,30 @@ body {
 .ef-row-clickable:hover { background: var(--bg3); }
 
 /* ── Edge Detail Drill-Down ── */
-.ef-detail-row { background: var(--bg); }
-.ef-detail-row td { padding: 0 !important; }
-.ef-detail-cell { border: none !important; }
+.ef-detail-panel-outer {
+  opacity: 0;
+  transform: translateY(-8px);
+  transition: opacity 0.15s, transform 0.15s;
+  margin-top: 8px;
+}
+.ef-detail-panel-outer.ef-detail-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+/* Desktop: detail row inside the table */
+tr.ef-detail-tr { background: var(--bg); margin-top: 0; }
+tr.ef-detail-tr td.ef-detail-cell { padding: 4px 8px 12px; border: none; }
 .ef-detail-panel {
   background: var(--bg2);
   border: 1px solid var(--border);
   border-radius: 10px;
-  margin: 4px 8px 12px;
-  padding: 16px;
-  opacity: 0;
-  transform: translateY(-8px);
-  transition: opacity 0.15s, transform 0.15s;
-}
-.ef-detail-visible .ef-detail-panel {
-  opacity: 1;
-  transform: translateY(0);
+  padding: 14px;
 }
 .ef-detail-header {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-bottom: 12px;
+  margin-bottom: 8px;
 }
 .ef-detail-hs {
   width: 42px;
@@ -2026,8 +2028,8 @@ body {
 .ef-detail-controls {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 12px;
+  gap: 8px;
+  margin-bottom: 6px;
 }
 .ef-detail-label {
   font-family: var(--font-m);
@@ -2062,14 +2064,14 @@ body {
 .ef-detail-btn-pos { border-color: rgba(35,209,139,0.4); }
 .ef-detail-btn-neg { border-color: rgba(255,61,90,0.3); }
 .ef-detail-chart-wrap {
-  height: 180px;
-  margin-bottom: 12px;
+  height: 140px;
+  margin-bottom: 8px;
 }
 .ef-detail-summary-grid {
   display: flex;
-  gap: 16px;
+  gap: 12px;
   flex-wrap: wrap;
-  padding: 8px 0 0;
+  padding: 6px 0 0;
   border-top: 1px solid var(--border);
 }
 .ef-detail-summary-item {
@@ -2098,11 +2100,11 @@ body {
 }
 .ef-detail-section-label {
   font-family: var(--font-d);
-  font-size: 16px;
+  font-size: 14px;
   letter-spacing: 1px;
   color: var(--text2);
-  margin-bottom: 8px;
-  padding-bottom: 6px;
+  margin-bottom: 4px;
+  padding-bottom: 4px;
   border-bottom: 1px solid var(--border);
 }
 .ef-detail-loading {
@@ -2116,25 +2118,102 @@ body {
   color: var(--text3);
 }
 
+/* ── Desktop/Mobile toggle ── */
+.ef-mobile-only { display: none; }
+
+/* ── Mobile Card List ── */
+.ef-card-list { flex-direction: column; gap: 6px; }
+.ef-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+.ef-card:active { background: var(--bg3); border-color: var(--text3); }
+.ef-card-left { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.ef-card-hs {
+  width: 34px; height: 34px; border-radius: 50%;
+  object-fit: cover; background: var(--bg3); flex-shrink: 0;
+}
+.ef-card-info { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.ef-card-name {
+  font-family: var(--font-m); font-size: 12px; font-weight: 600; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.ef-card-meta { font-family: var(--font-m); font-size: 9px; }
+.ef-card-right {
+  display: flex; align-items: center; gap: 6px; flex-shrink: 0; flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.ef-card-edge {
+  font-family: var(--font-m); font-size: 10px; font-weight: 600;
+  padding: 2px 6px; border-radius: 4px;
+  background: rgba(255,255,255,0.04);
+}
+
 /* ── Edge Finder Mobile ── */
 @media (max-width: 768px) {
   .ef-top-props-grid { grid-template-columns: 1fr; }
   .ef-def-grid { grid-template-columns: 1fr; }
-  .ef-th-stat { min-width: 65px; }
-  .ef-table { font-size: 11px; }
+
+  /* Switch to card layout */
+  .ef-desktop-only { display: none; }
+  .ef-mobile-only { display: block; }
+  .ef-card-list.ef-mobile-only { display: flex; }
+
+  /* Top Prop Picks */
+  .ef-top-prop { padding: 12px; }
+  .ef-top-prop-stats { gap: 6px; }
+  .ef-top-stat-col { min-width: 44px; }
+
+  /* Detail panel */
+  .ef-detail-panel { padding: 10px; }
+  .ef-detail-chart-wrap { height: 130px; }
+  .ef-detail-summary-grid { gap: 10px; }
+  .ef-detail-summary-val { font-size: 13px; }
 }
 @media (max-width: 480px) {
   .ef-title { font-size: 26px; }
   .ef-section-title { font-size: 17px; }
-  .ef-top-hs { width: 36px; height: 36px; }
-  .ef-top-name { font-size: 12px; }
-  .ef-top-stat-val { font-size: 12px; }
-  .ef-row-hs { width: 26px; height: 26px; }
-  .ef-row-name { font-size: 11px; }
-  .ef-th-stat { min-width: 55px; }
-  .ef-td-stat .ef-h2h-val { font-size: 11px; }
-  .ef-td-stat .ef-season-val { font-size: 8px; }
-  .ef-td-stat .ef-edge-val { font-size: 9px; }
+
+  /* Top Prop Picks */
+  .ef-top-hs { width: 32px; height: 32px; }
+  .ef-top-name { font-size: 11px; }
+  .ef-top-meta { font-size: 8px; }
+  .ef-top-stat-label { font-size: 8px; }
+  .ef-top-stat-val { font-size: 11px; }
+  .ef-top-stat-col { min-width: 40px; }
+  .ef-top-prop-player { gap: 6px; margin-bottom: 8px; }
+  .ef-top-prop-stats { gap: 4px; }
+  .ef-top-injury { font-size: 9px; }
+
+  /* Cards tighter */
+  .ef-card { padding: 8px 10px; }
+  .ef-card-hs { width: 30px; height: 30px; }
+  .ef-card-name { font-size: 11px; }
+  .ef-card-edge { font-size: 9px; padding: 1px 5px; }
+
+  /* Detail panel */
+  .ef-detail-panel { padding: 8px; }
+  .ef-detail-header { margin-bottom: 6px; gap: 8px; }
+  .ef-detail-hs { width: 28px; height: 28px; }
+  .ef-detail-name { font-size: 11px; }
+  .ef-detail-meta { font-size: 8px; }
+  .ef-detail-chart-wrap { height: 120px; }
+  .ef-detail-controls { margin-bottom: 4px; gap: 6px; }
+  .ef-detail-stat-btn { font-size: 9px; padding: 2px 6px; }
+  .ef-detail-section-label { font-size: 12px; margin-bottom: 3px; padding-bottom: 3px; }
+  .ef-detail-summary-grid { gap: 6px; padding: 4px 0 0; }
+  .ef-detail-summary-item { min-width: 44px; }
+  .ef-detail-summary-label { font-size: 7px; }
+  .ef-detail-summary-val { font-size: 11px; }
+  .ef-detail-summary-hint { font-size: 7px; }
 }
 
 /* ── MLB Pitching Research ── */
