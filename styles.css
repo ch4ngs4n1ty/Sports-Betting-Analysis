@@ -2746,6 +2746,73 @@ tr.ef-detail-tr td.ef-detail-cell { padding: 4px 8px 12px; border: none; }
   border-color: var(--lime);
 }
 
+/* Career vs team section */
+.lhr-vs-section {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.lhr-vs-label {
+  font-family: var(--font-m);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--lime);
+  margin-bottom: 8px;
+}
+.lhr-vs-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 6px;
+}
+.lhr-vs-cell {
+  text-align: center;
+}
+.lhr-vs-val {
+  font-family: var(--font-m);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  display: block;
+}
+.lhr-vs-key {
+  font-family: var(--font-m);
+  font-size: 8px;
+  color: var(--text3);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  display: block;
+  margin-top: 1px;
+}
+
+/* Season split rows */
+.lhr-season-splits {
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+.lhr-split-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 3px 0;
+  font-family: var(--font-m);
+  font-size: 11px;
+}
+.lhr-split-label {
+  color: var(--text3);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  min-width: 48px;
+}
+.lhr-split-stats {
+  color: var(--text2);
+  text-align: right;
+}
+
 @media (max-width: 900px) {
   .lhr-hitters-grid { grid-template-columns: 1fr; }
   .lhr-metrics-grid { grid-template-columns: repeat(3, 1fr); }
@@ -2753,4 +2820,5 @@ tr.ef-detail-tr td.ef-detail-cell { padding: 4px 8px 12px; border: none; }
 @media (max-width: 480px) {
   .lhr-hitter-stats { grid-template-columns: repeat(3, 1fr); }
   .lhr-metrics-grid { grid-template-columns: repeat(2, 1fr); }
+  .lhr-vs-grid { grid-template-columns: repeat(3, 1fr); }
 }

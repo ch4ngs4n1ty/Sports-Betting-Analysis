@@ -117,6 +117,105 @@ async function fetchMlbAthleteStats(athleteId) {
   return espn(`https://site.web.api.espn.com/apis/common/v3/sports/baseball/mlb/athletes/${athleteId}/stats?region=us&lang=en&contentorigin=espn`);
 }
 
+async function fetchMlbAthleteSplits(athleteId, season) {
+  return espn(`https://site.web.api.espn.com/apis/common/v3/sports/baseball/mlb/athletes/${athleteId}/splits?region=us&lang=en&contentorigin=espn&season=${season}`);
+}
+
+function extractVsTeamFromSplits(splitsData, opponentTeamName) {
+  if (!splitsData?.splitCategories) return null;
+  const names = splitsData.names || [];
+  const oppCat = splitsData.splitCategories.find(c => c.displayName === 'Opponent' || c.name === 'opponent');
+  if (!oppCat) return null;
+  const target = opponentTeamName.toLowerCase();
+  const match = oppCat.splits?.find(s => s.displayName?.toLowerCase().includes(target));
+  if (!match?.stats?.length) return null;
+  const stats = {};
+  names.forEach((n, i) => { stats[n] = match.stats[i]; });
+  return {
+    ab: parseInt(stats.atBats) || 0,
+    hits: parseInt(stats.hits) || 0,
+    hr: parseInt(stats.homeRuns) || 0,
+    rbi: parseInt(stats.RBIs) || 0,
+    k: parseInt(stats.strikeouts) || 0,
+    avg: stats.avg || '.000',
+  };
+}
+
+function extractPitcherVsTeamFromSplits(splitsData, opponentTeamName) {
+  if (!splitsData?.splitCategories) return null;
+  const names = splitsData.names || [];
+  const oppCat = splitsData.splitCategories.find(c => c.displayName === 'Opponent' || c.name === 'byOpponent');
+  if (!oppCat) return null;
+  const target = opponentTeamName.toLowerCase();
+  const match = oppCat.splits?.find(s => s.displayName?.toLowerCase().includes(target));
+  if (!match?.stats?.length) return null;
+  const stats = {};
+  names.forEach((n, i) => { stats[n] = match.stats[i]; });
+  return {
+    era: stats.ERA || '—',
+    w: parseInt(stats.wins) || 0,
+    l: parseInt(stats.losses) || 0,
+    gp: parseInt(stats.gamesPlayed) || 0,
+    ip: stats.innings || '—',
+    h: parseInt(stats.hits) || 0,
+    hr: parseInt(stats.homeRuns) || 0,
+    bb: parseInt(stats.walks) || 0,
+    k: parseInt(stats.strikeouts) || 0,
+    oba: stats.opponentAvg || '—',
+  };
+}
+
+async function fetchPitcherCareerVsTeam(pitcherId, opponentFullName) {
+  const currentYear = getSeasonYear('mlb');
+  const seasons = [currentYear, currentYear - 1, currentYear - 2, currentYear - 3, currentYear - 4];
+  const fetches = seasons.map(yr =>
+    espn(`https://site.web.api.espn.com/apis/common/v3/sports/baseball/mlb/athletes/${pitcherId}/splits?region=us&lang=en&contentorigin=espn&season=${yr}&category=pitching`).catch(() => null)
+  );
+  const results = await Promise.all(fetches);
+  const rows = [];
+  for (let i = 0; i < results.length; i++) {
+    const data = results[i];
+    if (!data) continue;
+    const vs = extractPitcherVsTeamFromSplits(data, opponentFullName);
+    if (vs && vs.gp > 0) {
+      rows.push({ season: seasons[i], ...vs });
+    }
+  }
+  if (!rows.length) return null;
+  const totals = { gp: 0, ip: 0, h: 0, hr: 0, bb: 0, k: 0, er: 0 };
+  for (const r of rows) {
+    totals.gp += r.gp;
+    totals.h += r.h;
+    totals.hr += r.hr;
+    totals.bb += r.bb;
+    totals.k += r.k;
+    const ipDec = baseballInningsToDecimal(r.ip);
+    if (ipDec) totals.ip += ipDec;
+  }
+  return { rows, totals, seasons: rows.length };
+}
+
+async function fetchCareerVsTeam(athleteId, opponentFullName) {
+  const currentYear = getSeasonYear('mlb');
+  const seasons = [currentYear, currentYear - 1, currentYear - 2, currentYear - 3, currentYear - 4];
+  const fetches = seasons.map(yr => fetchMlbAthleteSplits(athleteId, yr).catch(() => null));
+  const results = await Promise.all(fetches);
+  const rows = [];
+  for (let i = 0; i < results.length; i++) {
+    const data = results[i];
+    if (!data) continue;
+    const vs = extractVsTeamFromSplits(data, opponentFullName);
+    if (vs && vs.ab > 0) {
+      rows.push({ season: seasons[i], ...vs });
+    }
+  }
+  if (!rows.length) return null;
+  const totals = { ab: 0, hits: 0, hr: 0, rbi: 0, k: 0 };
+  for (const r of rows) { totals.ab += r.ab; totals.hits += r.hits; totals.hr += r.hr; totals.rbi += r.rbi; totals.k += r.k; }
+  totals.avg = totals.ab > 0 ? (totals.hits / totals.ab).toFixed(3) : '.000';
+  return { rows, totals, seasons: rows.length };
+}
+
 async function fetchMlbAthleteGameLog(athleteId) {
   return espn(`https://site.web.api.espn.com/apis/common/v3/sports/baseball/mlb/athletes/${athleteId}/gamelog?region=us&lang=en&contentorigin=espn`);
 }
@@ -763,9 +862,11 @@ async function buildLowHrMatchupData(gameData) {
     return lowHrFailsafe('ESPN probable pitcher data is missing — check back closer to game time.', sources);
   }
 
-  const [awayPitcherStats, homePitcherStats] = await Promise.all([
+  const [awayPitcherStats, homePitcherStats, awayPitcherVsTeam, homePitcherVsTeam] = await Promise.all([
     fetchMlbAthleteStats(pitchers.away.id),
     fetchMlbAthleteStats(pitchers.home.id),
+    fetchPitcherCareerVsTeam(pitchers.away.id, gameInfo.homeFull).catch(() => null),
+    fetchPitcherCareerVsTeam(pitchers.home.id, gameInfo.awayFull).catch(() => null),
   ]);
   sources.push(
     buildEspnSource(`https://site.web.api.espn.com/apis/common/v3/sports/baseball/mlb/athletes/${pitchers.away.id}/stats`, `${pitchers.away.name} stats`),
@@ -784,12 +885,16 @@ async function buildLowHrMatchupData(gameData) {
         name: pitchers.away.name,
         hr_per_9: awayHr9 != null ? Number(awayHr9.toFixed(3)) : null,
         hr_per_9_label: awayHr9 != null ? (awayHr9 <= 1.0 ? 'LOW' : 'ELEVATED') : 'N/A',
+        vs_team: awayPitcherVsTeam,
+        vs_team_name: gameInfo.homeAbbr,
       },
       {
         team: gameInfo.homeAbbr,
         name: pitchers.home.name,
         hr_per_9: homeHr9 != null ? Number(homeHr9.toFixed(3)) : null,
         hr_per_9_label: homeHr9 != null ? (homeHr9 <= 1.0 ? 'LOW' : 'ELEVATED') : 'N/A',
+        vs_team: homePitcherVsTeam,
+        vs_team_name: gameInfo.awayAbbr,
       },
     ],
     matchups: [],
@@ -798,8 +903,8 @@ async function buildLowHrMatchupData(gameData) {
 
   // Build matchups: each pitcher vs the opposing lineup
   const sides = [
-    { pitcher: pitchers.away, hr9: awayHr9, lineup: lineups.home, lineupStatus: homeLineupStatus, team: gameInfo.awayAbbr, oppTeam: gameInfo.homeAbbr },
-    { pitcher: pitchers.home, hr9: homeHr9, lineup: lineups.away, lineupStatus: awayLineupStatus, team: gameInfo.homeAbbr, oppTeam: gameInfo.awayAbbr },
+    { pitcher: pitchers.away, hr9: awayHr9, lineup: lineups.home, lineupStatus: homeLineupStatus, team: gameInfo.awayAbbr, oppTeam: gameInfo.homeAbbr, pitcherTeamFull: gameInfo.awayFull },
+    { pitcher: pitchers.home, hr9: homeHr9, lineup: lineups.away, lineupStatus: awayLineupStatus, team: gameInfo.homeAbbr, oppTeam: gameInfo.awayAbbr, pitcherTeamFull: gameInfo.homeFull },
   ];
 
   for (const side of sides) {
@@ -818,15 +923,17 @@ async function buildLowHrMatchupData(gameData) {
       continue;
     }
 
-    // Fetch all batter stats in parallel
-    const batterStatsList = await Promise.all(
-      batters.map(b => fetchMlbAthleteStats(b.athleteId).catch(() => null))
-    );
+    // Fetch batter season stats AND career vs pitcher's team in parallel
+    const batterFetches = batters.map(b => Promise.all([
+      fetchMlbAthleteStats(b.athleteId).catch(() => null),
+      fetchCareerVsTeam(b.athleteId, side.pitcherTeamFull).catch(() => null),
+    ]));
+    const batterResults = await Promise.all(batterFetches);
 
     const hitters = [];
     for (let i = 0; i < batters.length; i++) {
       const batter = batters[i];
-      const stats = batterStatsList[i];
+      const [stats, vsTeam] = batterResults[i];
       sources.push(buildEspnSource(
         `https://site.web.api.espn.com/apis/common/v3/sports/baseball/mlb/athletes/${batter.athleteId}/stats`,
         `${batter.name} stats`
@@ -854,6 +961,7 @@ async function buildLowHrMatchupData(gameData) {
           hr_rate: Number((prior.hr_probability * 100).toFixed(2)),
           no_hr_rate: Number((prior.no_hr_probability * 100).toFixed(2)),
         } : null,
+        vs_team: vsTeam,
         // ranking value = current season no_hr %, fallback to prior
         rank_no_hr: bestSeason ? Number((bestSeason.no_hr_probability * 100).toFixed(2)) : null,
       });
@@ -905,6 +1013,35 @@ function renderLowHrMatchup(data, gameData) {
     if (!sp) return '';
     const isLow = sp.hr_per_9_label === 'LOW';
     const color = sp.team === gameInfo.awayAbbr ? 'var(--blue)' : 'var(--lime)';
+    const vs = sp.vs_team;
+
+    const vsTeamHtml = vs ? `
+      <div class="lhr-vs-section" style="margin-top:12px">
+        <div class="lhr-vs-label">Career vs ${esc(sp.vs_team_name)}</div>
+        <div style="font-family:var(--font-m);font-size:10px;color:var(--text3);display:grid;grid-template-columns:50px repeat(6,1fr);gap:4px;padding:4px 0;border-bottom:1px solid var(--border);margin-bottom:4px">
+          <span>Year</span><span style="text-align:center">IP</span><span style="text-align:center">H</span><span style="text-align:center">HR</span><span style="text-align:center">BB</span><span style="text-align:center">K</span><span style="text-align:center">ERA</span>
+        </div>
+        ${vs.rows.map(r => `
+        <div style="font-family:var(--font-m);font-size:11px;display:grid;grid-template-columns:50px repeat(6,1fr);gap:4px;padding:3px 0;border-bottom:1px solid var(--border)">
+          <span style="color:var(--text3)">${r.season}</span>
+          <span style="text-align:center">${r.ip}</span>
+          <span style="text-align:center">${r.h}</span>
+          <span style="text-align:center;color:${r.hr === 0 ? 'var(--green)' : r.hr >= 3 ? 'var(--red)' : 'var(--text)'}">${r.hr}</span>
+          <span style="text-align:center">${r.bb}</span>
+          <span style="text-align:center">${r.k}</span>
+          <span style="text-align:center">${r.era}</span>
+        </div>`).join('')}
+        <div style="font-family:var(--font-m);font-size:11px;font-weight:700;display:grid;grid-template-columns:50px repeat(6,1fr);gap:4px;padding:4px 0;margin-top:2px">
+          <span style="color:var(--lime)">${vs.seasons}yr</span>
+          <span style="text-align:center">${vs.totals.ip > 0 ? vs.totals.ip.toFixed(1) : '—'}</span>
+          <span style="text-align:center">${vs.totals.h}</span>
+          <span style="text-align:center;color:${vs.totals.hr === 0 ? 'var(--green)' : 'var(--text)'}">${vs.totals.hr}</span>
+          <span style="text-align:center">${vs.totals.bb}</span>
+          <span style="text-align:center">${vs.totals.k}</span>
+          <span style="text-align:center">—</span>
+        </div>
+      </div>` : '';
+
     return `
       <div class="lhr-pitcher-card"${isLow ? ' style="border-color:var(--green);box-shadow:0 0 14px rgba(35,209,139,0.07)"' : ''}>
         <div class="lhr-pitcher-head">
@@ -920,19 +1057,17 @@ function renderLowHrMatchup(data, gameData) {
             <span class="lhr-metric-label">HR / 9 Inn</span>
           </div>
         </div>
+        ${vsTeamHtml}
       </div>`;
   };
 
-  // ── Hitter row (table-style for the ranked list) ──
-  const hitterRow = (h, rank) => {
+  // ── Hitter card with career vs team + season splits ──
+  const hitterRow = (h, rank, pitcherTeam) => {
     const noHr = h.rank_no_hr;
     const barColor = noHr != null && noHr >= 97 ? 'var(--green)' : noHr != null && noHr >= 95 ? 'var(--lime)' : 'var(--text2)';
-    const currAb = h.current_season?.ab;
-    const currHr = h.current_season?.hr;
-    const currNoHr = h.current_season?.no_hr_rate;
-    const prevAb = h.prior_season?.ab;
-    const prevHr = h.prior_season?.hr;
-    const prevNoHr = h.prior_season?.no_hr_rate;
+    const curr = h.current_season;
+    const prev = h.prior_season;
+    const vs = h.vs_team;
 
     return `
       <div class="lhr-hitter-card">
@@ -947,35 +1082,48 @@ function renderLowHrMatchup(data, gameData) {
           ${noHr != null ? `<span style="font-family:var(--font-m);font-size:16px;font-weight:700;color:${barColor}">${noHr}%</span>` : ''}
         </div>
         ${noHr != null ? `
-        <div style="margin:8px 0 10px">
+        <div style="margin:8px 0 12px">
           <div style="background:var(--bg2);border-radius:6px;overflow:hidden;height:5px;position:relative">
             <div style="position:absolute;left:0;top:0;height:100%;width:${Math.min(noHr, 100)}%;background:${barColor};border-radius:6px"></div>
           </div>
         </div>` : ''}
-        <div class="lhr-hitter-stats" style="grid-template-columns:repeat(3,1fr)">
-          <div class="lhr-hitter-stat">
-            <span class="lhr-hitter-stat-val">${currAb != null ? currAb : '—'}</span>
-            <span class="lhr-hitter-stat-label">AB (curr)</span>
+
+        ${vs ? `
+        <div class="lhr-vs-section">
+          <div class="lhr-vs-label">vs ${esc(pitcherTeam)} by Season</div>
+          <div style="font-family:var(--font-m);font-size:10px;color:var(--text3);display:grid;grid-template-columns:50px repeat(5,1fr);gap:4px;padding:4px 0;border-bottom:1px solid var(--border);margin-bottom:4px">
+            <span>Year</span><span style="text-align:center">H-AB</span><span style="text-align:center">HR</span><span style="text-align:center">RBI</span><span style="text-align:center">K</span><span style="text-align:center">AVG</span>
           </div>
-          <div class="lhr-hitter-stat">
-            <span class="lhr-hitter-stat-val">${currHr != null ? currHr : '—'}</span>
-            <span class="lhr-hitter-stat-label">HR (curr)</span>
+          ${vs.rows.map(r => `
+          <div style="font-family:var(--font-m);font-size:11px;display:grid;grid-template-columns:50px repeat(5,1fr);gap:4px;padding:3px 0;border-bottom:1px solid var(--border)">
+            <span style="color:var(--text3)">${r.season}</span>
+            <span style="text-align:center">${r.hits}-${r.ab}</span>
+            <span style="text-align:center;color:${r.hr === 0 ? 'var(--green)' : 'var(--text)'}">${r.hr}</span>
+            <span style="text-align:center">${r.rbi}</span>
+            <span style="text-align:center">${r.k}</span>
+            <span style="text-align:center">${r.avg.startsWith('0') ? r.avg.substring(1) : r.avg}</span>
+          </div>`).join('')}
+          <div style="font-family:var(--font-m);font-size:11px;font-weight:700;display:grid;grid-template-columns:50px repeat(5,1fr);gap:4px;padding:4px 0;margin-top:2px">
+            <span style="color:var(--lime)">Total</span>
+            <span style="text-align:center">${vs.totals.hits}-${vs.totals.ab}</span>
+            <span style="text-align:center;color:${vs.totals.hr === 0 ? 'var(--green)' : 'var(--text)'}">${vs.totals.hr}</span>
+            <span style="text-align:center">${vs.totals.rbi}</span>
+            <span style="text-align:center">${vs.totals.k}</span>
+            <span style="text-align:center">${vs.totals.avg.startsWith('0') ? vs.totals.avg.substring(1) : vs.totals.avg}</span>
           </div>
-          <div class="lhr-hitter-stat">
-            <span class="lhr-hitter-stat-val" style="color:${currNoHr != null && currNoHr >= 95 ? 'var(--green)' : 'var(--text)'}">${currNoHr != null ? currNoHr + '%' : '—'}</span>
-            <span class="lhr-hitter-stat-label">No-HR (curr)</span>
+        </div>` : `
+        <div class="lhr-vs-section">
+          <div class="lhr-vs-label" style="color:var(--text3)">vs ${esc(pitcherTeam)}: No data</div>
+        </div>`}
+
+        <div class="lhr-season-splits">
+          <div class="lhr-split-row">
+            <span class="lhr-split-label">Current</span>
+            <span class="lhr-split-stats">${curr ? `${curr.ab} AB · ${curr.hr} HR · <span style="color:${curr.no_hr_rate >= 95 ? 'var(--green)' : 'var(--text)'}">${curr.no_hr_rate}% No-HR</span>` : '—'}</span>
           </div>
-          <div class="lhr-hitter-stat">
-            <span class="lhr-hitter-stat-val">${prevAb != null ? prevAb : '—'}</span>
-            <span class="lhr-hitter-stat-label">AB (prev)</span>
-          </div>
-          <div class="lhr-hitter-stat">
-            <span class="lhr-hitter-stat-val">${prevHr != null ? prevHr : '—'}</span>
-            <span class="lhr-hitter-stat-label">HR (prev)</span>
-          </div>
-          <div class="lhr-hitter-stat">
-            <span class="lhr-hitter-stat-val" style="color:${prevNoHr != null && prevNoHr >= 95 ? 'var(--green)' : 'var(--text)'}">${prevNoHr != null ? prevNoHr + '%' : '—'}</span>
-            <span class="lhr-hitter-stat-label">No-HR (prev)</span>
+          <div class="lhr-split-row">
+            <span class="lhr-split-label">Prior</span>
+            <span class="lhr-split-stats">${prev ? `${prev.ab} AB · ${prev.hr} HR · <span style="color:${prev.no_hr_rate >= 95 ? 'var(--green)' : 'var(--text)'}">${prev.no_hr_rate}% No-HR</span>` : '—'}</span>
           </div>
         </div>
       </div>`;
@@ -1005,9 +1153,9 @@ function renderLowHrMatchup(data, gameData) {
           <span>${esc(m.pitcher)} (${esc(m.pitcher_team)}) vs ${esc(m.opponent_team)} Lineup</span>
           <span class="lhr-signal-badge ${isLow ? 'lhr-signal-badge--pass' : 'lhr-signal-badge--fail'}" style="font-size:9px;padding:2px 8px">HR/9: ${m.hr_per_9 != null ? m.hr_per_9 : '—'}</span>
         </div>
-        <div class="pe-hint" style="margin-bottom:12px">Opposing batters ranked by no-home-run probability (highest first). Current and prior season splits shown.</div>
+        <div class="pe-hint" style="margin-bottom:12px">Opposing batters ranked by no-HR probability. Career vs ${esc(m.pitcher_team)} stats + current/prior season splits.</div>
         <div class="lhr-hitters-grid">
-          ${hitters.map((h, i) => hitterRow(h, i + 1)).join('')}
+          ${hitters.map((h, i) => hitterRow(h, i + 1, m.pitcher_team)).join('')}
         </div>
       </div>`;
   }).join('');
@@ -1018,7 +1166,7 @@ function renderLowHrMatchup(data, gameData) {
   el.innerHTML = `
     <div class="pe-header">
       <div class="pe-title">Low HR Scanner</div>
-      <div class="pe-subtitle">Season HR rate analysis — opposing batters ranked by no-home-run probability per at-bat</div>
+      <div class="pe-subtitle">Pitcher HR/9 rate + career vs opponent team + batter no-HR probability per at-bat</div>
     </div>
 
     <div class="lhr-context-row">
