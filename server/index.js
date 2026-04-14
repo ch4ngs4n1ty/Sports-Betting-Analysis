@@ -74,8 +74,14 @@ async function fetchJson(url) {
 
 const MLB_API = 'https://statsapi.mlb.com/api/v1';
 
+function getLocalDate() {
+  // Use local timezone, not UTC — games are listed by local calendar date
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 async function getGamesToday() {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = getLocalDate();
   const cacheKey = `games_${today}`;
   const cached = cacheGet(cacheKey);
   if (cached) return cached;
