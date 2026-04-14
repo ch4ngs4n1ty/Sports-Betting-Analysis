@@ -907,6 +907,28 @@ async function buildLowHrMatchupData(gameData) {
     { pitcher: pitchers.home, hr9: homeHr9, lineup: lineups.away, lineupStatus: awayLineupStatus, team: gameInfo.homeAbbr, oppTeam: gameInfo.awayAbbr, pitcherTeamFull: gameInfo.homeFull },
   ];
 
+  // ── Fetch BvP data from backend (Baseball Savant via PlayIQ server) ──
+  let bvpData = null;
+  try {
+    const bvpUrl = `http://localhost:3001/api/mlb/game-bvp?away=${encodeURIComponent(gameInfo.awayFull)}&home=${encodeURIComponent(gameInfo.homeFull)}`;
+    const bvpResp = await fetch(bvpUrl);
+    if (bvpResp.ok) bvpData = await bvpResp.json();
+  } catch { /* backend not running — continue without BvP */ }
+
+  // Build a name→bvp lookup from backend data
+  function buildBvpLookup(bvpMatchups, pitcherName) {
+    if (!bvpMatchups?.length) return {};
+    const m = bvpMatchups.find(mu =>
+      normalizePlayerName(mu.pitcher?.name).includes(normalizePlayerName(pitcherName).split(' ').pop())
+    );
+    if (!m?.batters?.length) return {};
+    const lookup = {};
+    for (const b of m.batters) {
+      lookup[normalizePlayerName(b.name)] = b.bvp;
+    }
+    return lookup;
+  }
+
   for (const side of sides) {
     const batters = side.lineup || [];
     if (!batters.length) {
@@ -922,6 +944,9 @@ async function buildLowHrMatchupData(gameData) {
       });
       continue;
     }
+
+    // Build BvP lookup for this side's pitcher
+    const bvpLookup = buildBvpLookup(bvpData?.matchups, side.pitcher.name);
 
     // Fetch batter season stats AND career vs pitcher's team in parallel
     const batterFetches = batters.map(b => Promise.all([
@@ -946,6 +971,9 @@ async function buildLowHrMatchupData(gameData) {
       const prior = seasonal.prior;
       const bestSeason = curr || prior;
 
+      // Match BvP from Savant backend
+      const bvp = bvpLookup[normalizePlayerName(batter.name)] || null;
+
       hitters.push({
         name: batter.name,
         lineup_position: batter.order || '—',
@@ -962,6 +990,7 @@ async function buildLowHrMatchupData(gameData) {
           no_hr_rate: Number((prior.no_hr_probability * 100).toFixed(2)),
         } : null,
         vs_team: vsTeam,
+        bvp,
         // ranking value = current season no_hr %, fallback to prior
         rank_no_hr: bestSeason ? Number((bestSeason.no_hr_probability * 100).toFixed(2)) : null,
       });
@@ -1061,13 +1090,60 @@ function renderLowHrMatchup(data, gameData) {
       </div>`;
   };
 
-  // ── Hitter card with career vs team + season splits ──
-  const hitterRow = (h, rank, pitcherTeam) => {
+  // ── Hitter card with BvP + career vs team + season splits ──
+  const hitterRow = (h, rank, pitcherTeam, pitcherName) => {
     const noHr = h.rank_no_hr;
     const barColor = noHr != null && noHr >= 97 ? 'var(--green)' : noHr != null && noHr >= 95 ? 'var(--lime)' : 'var(--text2)';
     const curr = h.current_season;
     const prev = h.prior_season;
     const vs = h.vs_team;
+    const bvp = h.bvp;
+
+    // BvP section — the primary data from Baseball Savant
+    const bvpHtml = bvp && bvp.pa > 0 ? `
+      <div class="lhr-vs-section" style="border-left:2px solid var(--lime);padding-left:10px">
+        <div class="lhr-vs-label" style="color:var(--lime)">vs ${esc(pitcherName)} (Savant)</div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:6px">
+          <div style="text-align:center">
+            <div style="font-family:var(--font-m);font-size:16px;font-weight:700;color:var(--text)">${bvp.pa}</div>
+            <div style="font-family:var(--font-m);font-size:9px;color:var(--text3);text-transform:uppercase">PA</div>
+          </div>
+          <div style="text-align:center">
+            <div style="font-family:var(--font-m);font-size:16px;font-weight:700;color:var(--text)">${bvp.hits}-${bvp.ab}</div>
+            <div style="font-family:var(--font-m);font-size:9px;color:var(--text3);text-transform:uppercase">H-AB</div>
+          </div>
+          <div style="text-align:center">
+            <div style="font-family:var(--font-m);font-size:16px;font-weight:700;color:${bvp.hr === 0 ? 'var(--green)' : bvp.hr >= 2 ? 'var(--red)' : 'var(--text)'}">${bvp.hr}</div>
+            <div style="font-family:var(--font-m);font-size:9px;color:var(--text3);text-transform:uppercase">HR</div>
+          </div>
+          <div style="text-align:center">
+            <div style="font-family:var(--font-m);font-size:16px;font-weight:700;color:var(--text)">${bvp.k}</div>
+            <div style="font-family:var(--font-m);font-size:9px;color:var(--text3);text-transform:uppercase">K</div>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:6px">
+          <div style="text-align:center">
+            <div style="font-family:var(--font-m);font-size:13px;font-weight:600;color:var(--text)">${bvp.avg > 0 ? (bvp.avg < 1 ? String(bvp.avg.toFixed(3)).substring(1) : bvp.avg.toFixed(3)) : '.000'}</div>
+            <div style="font-family:var(--font-m);font-size:9px;color:var(--text3);text-transform:uppercase">AVG</div>
+          </div>
+          <div style="text-align:center">
+            <div style="font-family:var(--font-m);font-size:13px;font-weight:600;color:var(--text)">${bvp.obp > 0 ? (bvp.obp < 1 ? String(bvp.obp.toFixed(3)).substring(1) : bvp.obp.toFixed(3)) : '.000'}</div>
+            <div style="font-family:var(--font-m);font-size:9px;color:var(--text3);text-transform:uppercase">OBP</div>
+          </div>
+          <div style="text-align:center">
+            <div style="font-family:var(--font-m);font-size:13px;font-weight:600;color:var(--text)">${bvp.slg > 0 ? (bvp.slg < 1 ? String(bvp.slg.toFixed(3)).substring(1) : bvp.slg.toFixed(3)) : '.000'}</div>
+            <div style="font-family:var(--font-m);font-size:9px;color:var(--text3);text-transform:uppercase">SLG</div>
+          </div>
+          <div style="text-align:center">
+            <div style="font-family:var(--font-m);font-size:13px;font-weight:600;color:var(--text)">${bvp.bb}</div>
+            <div style="font-family:var(--font-m);font-size:9px;color:var(--text3);text-transform:uppercase">BB</div>
+          </div>
+        </div>
+        ${bvp.lastFaced ? `<div style="font-family:var(--font-m);font-size:9px;color:var(--text3);margin-top:6px">Last faced: ${bvp.lastFaced} · ${bvp.gamesPlayed} game${bvp.gamesPlayed !== 1 ? 's' : ''}</div>` : ''}
+      </div>` : bvp ? `
+      <div class="lhr-vs-section" style="border-left:2px solid var(--border);padding-left:10px">
+        <div class="lhr-vs-label" style="color:var(--text3)">vs ${esc(pitcherName)}: No matchup history</div>
+      </div>` : '';
 
     return `
       <div class="lhr-hitter-card">
@@ -1087,6 +1163,8 @@ function renderLowHrMatchup(data, gameData) {
             <div style="position:absolute;left:0;top:0;height:100%;width:${Math.min(noHr, 100)}%;background:${barColor};border-radius:6px"></div>
           </div>
         </div>` : ''}
+
+        ${bvpHtml}
 
         ${vs ? `
         <div class="lhr-vs-section">
@@ -1153,9 +1231,9 @@ function renderLowHrMatchup(data, gameData) {
           <span>${esc(m.pitcher)} (${esc(m.pitcher_team)}) vs ${esc(m.opponent_team)} Lineup</span>
           <span class="lhr-signal-badge ${isLow ? 'lhr-signal-badge--pass' : 'lhr-signal-badge--fail'}" style="font-size:9px;padding:2px 8px">HR/9: ${m.hr_per_9 != null ? m.hr_per_9 : '—'}</span>
         </div>
-        <div class="pe-hint" style="margin-bottom:12px">Opposing batters ranked by no-HR probability. Career vs ${esc(m.pitcher_team)} stats + current/prior season splits.</div>
+        <div class="pe-hint" style="margin-bottom:12px">Batters ranked by no-HR probability. BvP from Baseball Savant + career vs ${esc(m.pitcher_team)} + season splits.</div>
         <div class="lhr-hitters-grid">
-          ${hitters.map((h, i) => hitterRow(h, i + 1, m.pitcher_team)).join('')}
+          ${hitters.map((h, i) => hitterRow(h, i + 1, m.pitcher_team, m.pitcher)).join('')}
         </div>
       </div>`;
   }).join('');
@@ -1166,7 +1244,7 @@ function renderLowHrMatchup(data, gameData) {
   el.innerHTML = `
     <div class="pe-header">
       <div class="pe-title">Low HR Scanner</div>
-      <div class="pe-subtitle">Pitcher HR/9 rate + career vs opponent team + batter no-HR probability per at-bat</div>
+      <div class="pe-subtitle">Batter vs Pitcher (Savant) + Pitcher HR/9 + career vs team + no-HR probability</div>
     </div>
 
     <div class="lhr-context-row">

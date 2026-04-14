@@ -1,0 +1,11 @@
+{
+  "name": "playiq-server",
+  "version": "1.0.0",
+  "description": "PlayIQ backend — MLB Stats API + Baseball Savant BvP",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node index.js"
+  },
+  "dependencies": {}
+}
