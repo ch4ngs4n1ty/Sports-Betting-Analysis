@@ -741,16 +741,34 @@ async function fetchH2H(gameInfo) {
   const sp = SPORTS.find(s => s.key === gameInfo.sportKey);
   if (!sp) return [];
 
-  // Fetch last 3 seasons to get a richer matchup history
+  // Fetch last 3 seasons to get a richer matchup history.
+  // Request both regular season (seasontype=2) and postseason (seasontype=3)
+  // explicitly — ESPN's default seasontype shifts mid-year and during playoffs
+  // it returns ONLY postseason games, which breaks H2H during transition periods.
   const baseSeason = getSeasonYear(gameInfo.sportKey);
   const seasons = [baseSeason, baseSeason - 1, baseSeason - 2];
 
-  const allEvents = (await Promise.all(
-    seasons.map(season =>
-      espn(`https://site.api.espn.com/apis/site/v2/sports/${sp.sport}/${sp.league}/teams/${gameInfo.awayTeamId}/schedule?season=${season}`)
-        .then(d => d?.events || [])
-    )
-  )).flat();
+  const scheduleUrl = (season, seasontype) =>
+    `https://site.api.espn.com/apis/site/v2/sports/${sp.sport}/${sp.league}/teams/${gameInfo.awayTeamId}/schedule?season=${season}&seasontype=${seasontype}`;
+
+  const fetchedEventLists = await Promise.all(
+    seasons.flatMap(season => [
+      espn(scheduleUrl(season, 2)).then(d => d?.events || []),
+      espn(scheduleUrl(season, 3)).then(d => d?.events || []),
+    ])
+  );
+
+  // Dedupe by event id in case a game surfaces in both seasontype responses
+  const seenIds = new Set();
+  const allEvents = [];
+  for (const list of fetchedEventLists) {
+    for (const ev of list) {
+      if (ev?.id && !seenIds.has(ev.id)) {
+        seenIds.add(ev.id);
+        allEvents.push(ev);
+      }
+    }
+  }
 
   const h2h = allEvents
     .filter(ev => {
