@@ -259,6 +259,7 @@ function renderGameCard(g, idx) {
 /* ── RESET ──────────────────────────────────────────────── */
 function resetToDashboard() {
   sessionStorage.removeItem('piq_game');
+  document.body.className = '';
   document.getElementById('dashboardSection').classList.remove('hidden');
   document.getElementById('analysisPanel').classList.add('hidden');
   Object.values(S.charts).forEach(c => { try { c.destroy(); } catch(e){} });
@@ -276,6 +277,7 @@ function analyzeGame(idx) {
 
 async function startAnalysis(gameInfo) {
   sessionStorage.setItem('piq_game', JSON.stringify(gameInfo));
+  document.body.className = `sport-${gameInfo.sportKey}`;
 
   // Hide dashboard, show analysis panel
   document.getElementById('dashboardSection').classList.add('hidden');
