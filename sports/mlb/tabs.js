@@ -243,6 +243,67 @@ async function fetchMlbAthleteGameLog(athleteId) {
   return espn(`https://site.web.api.espn.com/apis/common/v3/sports/baseball/mlb/athletes/${athleteId}/gamelog?region=us&lang=en&contentorigin=espn`);
 }
 
+// ── WEATHER ─────────────────────────────────────────────
+// Per-game weather via PlayIQ backend (MLB Stats feed/live). ESPN's MLB
+// summary endpoint doesn't include weather, so we bridge ESPN gamelog dates
+// to MLB gamePk on the backend via team abbreviation + date. Cached by
+// date+abbr to dedupe across batters.
+const _mlbWeatherCache = new Map();
+async function fetchMlbGameWeather(date, teamAbbr) {
+  if (!date || !teamAbbr) return null;
+  const key = `${date}_${teamAbbr.toUpperCase()}`;
+  if (_mlbWeatherCache.has(key)) return _mlbWeatherCache.get(key);
+  try {
+    const r = await fetch(`http://localhost:3001/api/mlb/weather?date=${encodeURIComponent(date)}&teamAbbr=${encodeURIComponent(teamAbbr)}`);
+    if (!r.ok) {
+      _mlbWeatherCache.set(key, null);
+      return null;
+    }
+    const data = await r.json();
+    const weather = data?.weather || null;
+    _mlbWeatherCache.set(key, weather);
+    return weather;
+  } catch (_) {
+    _mlbWeatherCache.set(key, null);
+    return null;
+  }
+}
+
+// Small formatter for chart tooltips / strips.
+function formatWeatherLine(wx) {
+  if (!wx) return '';
+  const parts = [];
+  if (wx.temp != null) parts.push(`${Math.round(wx.temp)}°F`);
+  if (wx.condition) parts.push(wx.condition);
+  if (wx.wind) parts.push(`Wind ${wx.wind}`);
+  return parts.join(' · ');
+}
+
+// Render a weather strip inside an element by id, one chip per game.
+// Hides itself if no game has weather data.
+function renderMlbWeatherStrip(elId, games) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  const anyWeather = games.some(g => g.weather);
+  if (!anyWeather) {
+    el.style.display = 'none';
+    return;
+  }
+  el.innerHTML = games.map(g => {
+    const wx = g.weather;
+    if (!wx) return `<div class="ef-wx-chip ef-wx-empty">—</div>`;
+    const temp = wx.temp != null ? `${Math.round(wx.temp)}°` : '—';
+    const wind = wx.wind || '—';
+    const tip = `${formatWeatherLine(wx)}${wx.venue ? ' @ ' + wx.venue : ''}`;
+    return `<div class="ef-wx-chip" title="${escapeHtml(tip)}">
+      <span class="ef-wx-temp">${temp}</span>
+      <span class="ef-wx-wind">${escapeHtml(wind)}</span>
+    </div>`;
+  }).join('');
+  el.style.display = 'grid';
+  el.style.gridTemplateColumns = `repeat(${games.length}, minmax(0, 1fr))`;
+}
+
 function extractRecentPitcherWorkload(gameLogData, limit = 5) {
   if (!gameLogData?.labels?.length || !gameLogData?.seasonTypes?.length) return [];
   const labels = gameLogData.labels;
@@ -1735,6 +1796,7 @@ function renderMlbEdgeFinder(data, gameData) {
 
 const MLB_DETAIL_STATS = [
   { key: 'h', label: 'H', espnIdx: 'H' },
+  { key: 'hr', label: 'HR', espnIdx: 'HR' },
   { key: 'r', label: 'R', espnIdx: 'R' },
   { key: 'rbi', label: 'RBI', espnIdx: 'RBI' },
   { key: 'k', label: 'K', espnIdx: 'SO' },
@@ -1850,6 +1912,7 @@ function toggleMlbEdgeDetail(idx) {
         </div>
         <canvas id="meL5Chart_${idx}" height="140" style="display:none"></canvas>
       </div>
+      <div class="ef-wx-strip" id="meL5Weather_${idx}" style="display:none"></div>
       <div class="ef-detail-summary" id="meL5Summary_${idx}"></div>
 
       <!-- Games vs This Pitcher (BvP) -->
@@ -1864,6 +1927,7 @@ function toggleMlbEdgeDetail(idx) {
           : `<div class="ef-detail-loading" style="color:var(--text3)">${b.neverFaced ? 'These two have never faced each other' : 'No per-game BvP data available'}</div>`
         }
       </div>
+      <div class="ef-wx-strip" id="meBvpWeather_${idx}" style="display:none"></div>
       <div class="ef-detail-summary" id="meBvpSummary_${idx}"></div>
     </div>`;
 
@@ -1905,7 +1969,7 @@ function toggleMlbEdgeDetail(idx) {
   }
 
   // Fetch last 5 games async from ESPN gamelog
-  fetchMlbAthleteGameLog(b.athleteId).then(gameLogData => {
+  fetchMlbAthleteGameLog(b.athleteId).then(async gameLogData => {
     const games = extractBatterRecentGames(gameLogData);
     b._last5Games = games;
     const loadEl = document.getElementById(`meL5Loading_${idx}`);
@@ -1918,6 +1982,20 @@ function toggleMlbEdgeDetail(idx) {
       return;
     }
     renderMlbL5Chart(idx, defaultL5Stat);
+
+    // Enrich L5 games with weather from MLB Stats API (backend-routed).
+    // ESPN MLB summaries don't include weather, so we look it up by
+    // batter's team abbr + game date. Mutating weather onto the existing
+    // game objects lets the chart's tooltip closure pick it up on hover.
+    const teamAbbr = b.battingTeam;
+    Promise.all(games.map(async g => {
+      const d = g.date ? new Date(g.date).toISOString().slice(0, 10) : null;
+      g.weather = await fetchMlbGameWeather(d, teamAbbr).catch(() => null);
+    })).then(() => {
+      if (document.getElementById(`me-detail-${idx}`)) {
+        renderMlbWeatherStrip(`meL5Weather_${idx}`, games);
+      }
+    });
   }).catch(() => {
     const wrap = document.getElementById(`meL5Wrap_${idx}`);
     if (wrap) wrap.innerHTML = '<div class="ef-detail-loading" style="color:var(--text3)">Failed to load game log</div>';
@@ -2000,7 +2078,13 @@ function renderMlbL5Chart(idx, statKey) {
             label: (item) => {
               if (item.datasetIndex > 0) return `${item.dataset.label}: ${item.raw}`;
               const g = games[item.dataIndex];
-              return `${statLabel}: ${item.raw}  (${g.ab} AB · ${g.h}H · ${g.r}R · ${g.rbi}RBI · ${g.k}K)`;
+              return `${statLabel}: ${item.raw}  (${g.ab} AB · ${g.h}H · ${g.r}R · ${g.rbi}RBI · ${g.hr}HR · ${g.k}K)`;
+            },
+            afterLabel: (item) => {
+              if (item.datasetIndex > 0) return null;
+              const g = games[item.dataIndex];
+              const line = formatWeatherLine(g.weather);
+              return line ? `☁ ${line}` : null;
             },
           },
           backgroundColor: 'rgba(13,13,18,0.95)',
@@ -2026,6 +2110,8 @@ function renderMlbL5Chart(idx, statKey) {
       },
     },
   });
+
+  renderMlbWeatherStrip(`meL5Weather_${idx}`, games);
 
   // Summary
   const summaryEl = document.getElementById(`meL5Summary_${idx}`);
@@ -2143,6 +2229,12 @@ function renderMlbBvpChart(idx, statKey) {
               const g = games[item.dataIndex];
               return `${statLabel}: ${item.raw}  (${g.ab} AB · ${g.h}H · ${g.hr}HR · ${g.k}K · ${g.bb}BB)`;
             },
+            afterLabel: (item) => {
+              if (item.datasetIndex > 0) return null;
+              const g = games[item.dataIndex];
+              const line = formatWeatherLine(g.weather);
+              return line ? `☁ ${line}` : null;
+            },
           },
           backgroundColor: 'rgba(13,13,18,0.95)',
           borderColor: 'rgba(255,255,255,0.1)',
@@ -2167,6 +2259,8 @@ function renderMlbBvpChart(idx, statKey) {
       },
     },
   });
+
+  renderMlbWeatherStrip(`meBvpWeather_${idx}`, games);
 
   // Summary
   const summaryEl = document.getElementById(`meBvpSummary_${idx}`);

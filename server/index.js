@@ -357,6 +357,7 @@ function summarizeBvP(pitches, batterId, pitcherId) {
 
     pa++;
     const gameDate = p.game_date || '';
+    const gamePk = p.game_pk || null;
 
     switch (ev) {
       case 'single':
@@ -387,9 +388,10 @@ function summarizeBvP(pitches, batterId, pitcherId) {
 
     // Track per-game results with full stats
     if (!gameResults[gameDate]) {
-      gameResults[gameDate] = { pa: 0, ab: 0, h: 0, hr: 0, bb: 0, k: 0, hbp: 0, singles: 0, doubles: 0, triples: 0, sf: 0, events: [] };
+      gameResults[gameDate] = { gamePk, pa: 0, ab: 0, h: 0, hr: 0, bb: 0, k: 0, hbp: 0, singles: 0, doubles: 0, triples: 0, sf: 0, events: [] };
     }
     const gm = gameResults[gameDate];
+    if (!gm.gamePk && gamePk) gm.gamePk = gamePk;
     gm.pa++;
     gm.events.push(ev);
     switch (ev) {
@@ -415,6 +417,7 @@ function summarizeBvP(pitches, batterId, pitcherId) {
     .sort((a, b) => b[0].localeCompare(a[0]))
     .map(([date, g]) => ({
       date,
+      gamePk: g.gamePk || null,
       pa: g.pa, ab: g.ab, h: g.h, hr: g.hr, bb: g.bb, k: g.k,
       avg: g.ab > 0 ? Number((g.h / g.ab).toFixed(3)) : 0,
     }));
@@ -442,6 +445,54 @@ function summarizeBvP(pitches, batterId, pitcherId) {
     lastFaced: Object.keys(gameResults).sort().pop() || null,
     gameByGame,
   };
+}
+
+
+// ══════════════════════════════════════════════════════════
+//  WEATHER — MLB feed/live provides temp + wind + condition
+//  per game. Cached per gamePk (weather doesn't change post-game).
+// ══════════════════════════════════════════════════════════
+
+const WEATHER_TTL = 24 * 60 * 60 * 1000; // 24h — historical weather is static
+
+async function fetchGameWeather(gamePk) {
+  if (!gamePk) return null;
+  const cacheKey = `weather_${gamePk}`;
+  const cached = cacheGet(cacheKey);
+  if (cached !== null) return cached;
+
+  try {
+    const data = await fetchJson(`${MLB_API.replace('/v1', '/v1.1')}/game/${gamePk}/feed/live`);
+    const w = data?.gameData?.weather || {};
+    const venue = data?.gameData?.venue || {};
+    const result = {
+      condition: w.condition || null,
+      temp: w.temp ? Number(w.temp) : null,
+      wind: w.wind || null,
+      venue: venue.name || null,
+      roofType: venue.roofType || null,
+    };
+    cacheSet(cacheKey, result, WEATHER_TTL);
+    return result;
+  } catch (err) {
+    cacheSet(cacheKey, null, WEATHER_TTL);
+    return null;
+  }
+}
+
+// Enrich a batter's gameByGame array with weather, deduping identical gamePks
+// (all 9 batters share the same gamePk for a given game — caching makes this cheap).
+async function enrichBvpGamesWithWeather(gameByGame) {
+  if (!gameByGame?.length) return gameByGame;
+  const pks = [...new Set(gameByGame.map(g => g.gamePk).filter(Boolean))];
+  const weatherByPk = {};
+  await Promise.all(pks.map(async pk => {
+    weatherByPk[pk] = await fetchGameWeather(pk);
+  }));
+  return gameByGame.map(g => ({
+    ...g,
+    weather: g.gamePk ? weatherByPk[g.gamePk] || null : null,
+  }));
 }
 
 
@@ -521,6 +572,15 @@ async function getGameBvp(gamePk, options = {}) {
       else resolvedBatters++;
     });
 
+    // Attach weather to each per-game BvP entry. All batters in this matchup
+    // share the same gamePks (same games), so caching makes this ~1 fetch per
+    // unique game rather than per batter.
+    await Promise.all(bvpResults.map(async r => {
+      if (r.gameByGame?.length) {
+        r.gameByGame = await enrichBvpGamesWithWeather(r.gameByGame);
+      }
+    }));
+
     const batterDetails = batters.map((b, i) => ({
       id: b.id,
       name: b.name,
@@ -561,6 +621,51 @@ async function getGameBvp(gamePk, options = {}) {
     source: 'Baseball Savant Statcast + MLB Stats API',
     cachedAt: new Date().toISOString(),
   };
+}
+
+
+// ══════════════════════════════════════════════════════════
+//  TEAM ABBREVIATION MAP — ESPN and MLB use the same abbrs
+//  (ATL, NYY, LAD, etc.) so we can bridge ESPN gamelog data
+//  to MLB gamePk → weather without a name match.
+// ══════════════════════════════════════════════════════════
+
+async function getMlbTeamsByAbbr() {
+  const cacheKey = 'mlb_teams_by_abbr';
+  const cached = cacheGet(cacheKey);
+  if (cached) return cached;
+  try {
+    const data = await fetchJson(`${MLB_API}/teams?sportId=1`);
+    const map = {};
+    for (const t of data.teams || []) {
+      if (t.abbreviation) map[t.abbreviation.toUpperCase()] = { id: t.id, name: t.name };
+    }
+    cacheSet(cacheKey, map, 24 * 60 * 60 * 1000); // 24h — team list is static
+    return map;
+  } catch (err) {
+    return {};
+  }
+}
+
+// Given a date and a team abbreviation, find the MLB gamePk for that team's
+// game on that day. Doubleheaders pick the first game listed.
+async function findGamePkByAbbrDate(teamAbbr, date) {
+  if (!teamAbbr || !date) return null;
+  const teams = await getMlbTeamsByAbbr();
+  const team = teams[teamAbbr.toUpperCase()];
+  if (!team) return null;
+  const cacheKey = `gamepk_${team.id}_${date}`;
+  const cached = cacheGet(cacheKey);
+  if (cached !== null) return cached;
+  try {
+    const data = await fetchJson(`${MLB_API}/schedule?sportId=1&date=${date}&teamId=${team.id}`);
+    const games = (data.dates?.[0]?.games) || [];
+    const gamePk = games[0]?.gamePk || null;
+    cacheSet(cacheKey, gamePk, CACHE_TTL);
+    return gamePk;
+  } catch (err) {
+    return null;
+  }
 }
 
 
@@ -699,6 +804,19 @@ const server = http.createServer(async (req, res) => {
       const homePitcher = url.searchParams.get('homePitcher') || undefined;
       const result = await getGameBvp(gamePk, { refresh, awayLineup, homeLineup, awayPitcher, homePitcher });
       return sendJson(res, result);
+    }
+
+    // GET /api/mlb/weather?date=YYYY-MM-DD&teamAbbr=ATL
+    // Returns weather for that team's game on that date (condition/temp/wind/venue).
+    // Used by the frontend to decorate each L5 game in the MLB Edge Finder.
+    if (path === '/api/mlb/weather') {
+      const date = url.searchParams.get('date');
+      const teamAbbr = url.searchParams.get('teamAbbr');
+      if (!date || !teamAbbr) return sendError(res, 'date and teamAbbr required');
+      const gamePk = await findGamePkByAbbrDate(teamAbbr, date);
+      if (!gamePk) return sendJson(res, { weather: null, gamePk: null });
+      const weather = await fetchGameWeather(gamePk);
+      return sendJson(res, { weather, gamePk });
     }
 
     // Health check

@@ -2143,6 +2143,45 @@ tr.ef-detail-tr td.ef-detail-cell { padding: 4px 8px 12px; border: none; }
   height: 140px;
   margin-bottom: 8px;
 }
+.ef-wx-strip {
+  display: grid;
+  gap: 4px;
+  margin: 0 0 8px;
+  padding: 6px 0 8px;
+  border-bottom: 1px solid var(--border);
+}
+.ef-wx-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 4px 2px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-family: var(--font-m);
+  line-height: 1.1;
+  text-align: center;
+}
+.ef-wx-chip.ef-wx-empty {
+  color: var(--text3);
+  background: transparent;
+  border-style: dashed;
+}
+.ef-wx-temp {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text);
+}
+.ef-wx-wind {
+  font-size: 9px;
+  color: var(--text3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
 .ef-detail-summary-grid {
   display: flex;
   gap: 12px;

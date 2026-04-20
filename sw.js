@@ -4,7 +4,7 @@
              Network-only for live API calls
 ═══════════════════════════════════════════ */
 
-const CACHE = 'playiq-v7';
+const CACHE = 'playiq-v9';
 
 const BASE = self.registration.scope;
 
