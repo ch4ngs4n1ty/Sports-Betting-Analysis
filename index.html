@@ -1,243 +1,299 @@
 <!DOCTYPE html>
-<html lang="en">  
+<html lang="en">
 <head>
-  <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>PlayIQ — Deep Game Analysis</title>
 
   <!-- PWA -->
-  <link rel="manifest" href="manifest.json"/>
-  <meta name="theme-color" content="#06060a"/>
-  <meta name="mobile-web-app-capable" content="yes"/>
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#05080f" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="PlayIQ" />
+  <link rel="apple-touch-icon" href="icon.svg" />
 
-  <!-- iOS PWA -->
-  <meta name="apple-mobile-web-app-capable" content="yes"/>
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
-  <meta name="apple-mobile-web-app-title" content="PlayIQ"/>
-  <link rel="apple-touch-icon" href="icon.svg"/>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
 
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=IBM+Plex+Mono:wght@300;400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css"/>
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" crossorigin="anonymous"></script>
+
+  <!-- Data layer (plain JS — loaded before components) -->
+  <script src="data-layer.js"></script>
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:      #05080f;
+      --surface: #090d1a;
+      --card:    #0d1524;
+      --cyan:    #00d4ff;
+      --green:   #00ff88;
+      --orange:  #ff6b35;
+      --gold:    #ffd060;
+      --text:    #c0d4e8;
+      --muted:   #4a6080;
+      --dim:     #2a3a50;
+    }
+
+    html, body { height: 100%; background: var(--bg); color: var(--text); font-family: 'Space Mono', monospace; overflow-x: hidden; }
+
+    /* Scanlines */
+    body::after {
+      content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 9999;
+      background: repeating-linear-gradient(0deg, transparent, transparent 3px, rgba(0,0,0,0.035) 3px, rgba(0,0,0,0.035) 4px);
+    }
+
+    /* Grid bg */
+    body::before {
+      content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 0;
+      background-image: linear-gradient(rgba(0,212,255,0.022) 1px, transparent 1px), linear-gradient(90deg, rgba(0,212,255,0.022) 1px, transparent 1px);
+      background-size: 48px 48px;
+    }
+
+    #root { position: relative; z-index: 1; min-height: 100vh; }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 4px; height: 4px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: rgba(0,212,255,0.18); border-radius: 2px; }
+
+    /* Keyframes */
+    @keyframes livePulse   { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.4;transform:scale(.8)} }
+    @keyframes fadeUp      { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
+    @keyframes glowPulse   { 0%,100%{text-shadow:0 0 10px rgba(0,212,255,.35)} 50%{text-shadow:0 0 28px rgba(0,212,255,.75),0 0 56px rgba(0,212,255,.2)} }
+
+    .screen-enter { animation: fadeUp 0.28s ease; }
+
+    /* Top nav */
+    .topnav {
+      position: sticky; top: 0; z-index: 200;
+      height: 52px; display: flex; align-items: center; gap: 16px; padding: 0 24px;
+      background: rgba(5,8,15,0.94); backdrop-filter: blur(16px);
+      border-bottom: 1px solid rgba(0,212,255,0.07);
+    }
+    .logo {
+      font-family: 'Orbitron', monospace; font-weight: 900; font-size: 18px;
+      color: var(--cyan); letter-spacing: 0.1em; cursor: pointer;
+      animation: glowPulse 3.5s ease-in-out infinite; user-select: none;
+      text-decoration: none;
+    }
+    .logo span { color: rgba(0,212,255,0.35); }
+    .nav-sep  { width: 1px; height: 20px; background: rgba(0,212,255,0.1); }
+    .nav-bc   { flex: 1; font-size: 10px; color: var(--muted); letter-spacing: 0.18em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .nav-status { display: flex; align-items: center; gap: 6px; font-size: 9px; color: var(--dim); letter-spacing: 0.12em; flex-shrink: 0; }
+    .nav-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--green); box-shadow: 0 0 6px var(--green); animation: livePulse 2.2s ease-in-out infinite; }
+
+    /* API key row */
+    .api-row { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+    .api-row input {
+      background: rgba(0,212,255,0.04); border: 1px solid rgba(0,212,255,0.15);
+      color: var(--text); font-family: 'Space Mono', monospace; font-size: 10px;
+      padding: 5px 10px; border-radius: 2px; width: 180px; letter-spacing: 0.05em;
+    }
+    .api-row input::placeholder { color: var(--dim); }
+    .api-row input:focus { border-color: rgba(0,212,255,0.4); outline: none; }
+    .api-row button {
+      background: rgba(0,212,255,0.08); border: 1px solid rgba(0,212,255,0.25);
+      color: var(--cyan); font-family: 'Space Mono', monospace; font-size: 9px;
+      padding: 5px 10px; letter-spacing: 0.12em; cursor: pointer; border-radius: 2px;
+      transition: all 0.15s;
+    }
+    .api-row button:hover { background: rgba(0,212,255,0.15); border-color: rgba(0,212,255,0.4); }
+    .api-row .saved { font-size: 9px; color: var(--green); font-family: 'Space Mono', monospace; letterSpacing: 0.1em; }
+
+    /* Date input */
+    input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(.5) sepia(1) saturate(5) hue-rotate(170deg); cursor: pointer; }
+    input[type="date"] { color-scheme: dark; }
+    textarea:focus, input:focus { outline: none; }
+
+    /* Tweaks panel */
+    .tweaks {
+      position: fixed; bottom: 20px; right: 20px; width: 230px; z-index: 300;
+      background: rgba(9,13,26,0.97); border: 1px solid rgba(0,212,255,0.2);
+      border-radius: 4px; padding: 16px; backdrop-filter: blur(20px);
+      display: none; font-family: 'Space Mono', monospace;
+    }
+    .tweaks.open { display: block; animation: fadeUp .18s ease; }
+    .tw-title { font-size: 9px; color: var(--cyan); letter-spacing: 0.22em; margin-bottom: 14px; }
+    .tw-row   { margin-bottom: 12px; }
+    .tw-lbl   { font-size: 9px; color: var(--dim); letter-spacing: 0.1em; margin-bottom: 5px; }
+    .tw-opts  { display: flex; gap: 6px; flex-wrap: wrap; }
+    .tw-btn   { font-size: 9px; font-family: 'Space Mono', monospace; padding: 4px 9px; border-radius: 2px;
+                cursor: pointer; border: 1px solid rgba(0,212,255,0.15); background: transparent;
+                color: var(--muted); transition: all .15s; }
+    .tw-btn.on{ border-color: var(--cyan); color: var(--cyan); background: rgba(0,212,255,0.08); }
+  </style>
 </head>
 <body>
+<div id="root"></div>
 
-  <div class="grain"></div>
+<!-- Component scripts (Babel-transpiled in the browser) -->
+<script type="text/babel" src="ui-atoms.jsx"></script>
+<script type="text/babel" src="tabs.jsx"></script>
+<script type="text/babel" src="screens-v2.jsx"></script>
 
-  <!-- ── HEADER ─────────────────────────────────────── -->
-  <header class="topbar">
-    <div class="topbar-left">
-      <div class="logo">PLAY<span>IQ</span></div>
-      <span class="tagline">Deep Game Analysis</span>
+<script type="text/babel">
+/* ── TWEAK DEFAULTS ──────────────────────────────────── */
+const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+  "accentColor": "#00d4ff",
+  "gridLines": true,
+  "scanlines": true,
+  "density": "comfortable"
+}/*EDITMODE-END*/;
+
+/* ── API KEY INPUT ───────────────────────────────────── */
+function ApiKeyInput() {
+  const [val, setVal] = React.useState(() => localStorage.getItem('piq_key') || '');
+  const [savedTick, setSavedTick] = React.useState(false);
+
+  const save = () => {
+    const v = val.trim();
+    if (v) localStorage.setItem('piq_key', v);
+    else   localStorage.removeItem('piq_key');
+    setSavedTick(true);
+    setTimeout(() => setSavedTick(false), 1600);
+  };
+
+  return (
+    <div className="api-row">
+      <input
+        type="password"
+        value={val}
+        onChange={e => setVal(e.target.value)}
+        onKeyDown={e => { if (e.key === 'Enter') save(); }}
+        placeholder="Claude API key (sk-ant-…)"
+      />
+      <button onClick={save}>SAVE</button>
+      {savedTick && <span className="saved">● SAVED</span>}
     </div>
-    <div class="topbar-right">
-      <div class="api-row">
-        <input type="password" id="apiKey" placeholder="Claude API key (sk-ant-...)" />
-        <button onclick="saveKey()">SAVE</button>
-        <span id="keySaved"></span>
-      </div>
-    </div>
-  </header>
+  );
+}
 
-  <!-- ── DASHBOARD ──────────────────────────────────── -->
-  <section class="dashboard-section" id="dashboardSection">
+/* ── APP ROOT ────────────────────────────────────────── */
+function App() {
+  const [view, setView] = React.useState(() => {
+    try { return JSON.parse(sessionStorage.getItem('piq_view') || '{}').view || 'home'; } catch { return 'home'; }
+  });
+  const [selectedSport, setSelectedSport] = React.useState('mlb');
+  const [selectedGame, setSelectedGame] = React.useState(() => {
+    try { const s = sessionStorage.getItem('piq_game'); return s ? JSON.parse(s) : null; } catch { return null; }
+  });
 
-    <div class="dashboard-controls">
-      <div class="dashboard-title-row">
-        <h2 class="dashboard-heading">Today's Games</h2>
-        <span class="dashboard-date" id="dashboardDate"></span>
-      </div>
-      <button class="refresh-btn" onclick="loadDashboard()">↻ Refresh</button>
-    </div>
+  const [tweaks, setTweaks] = React.useState(TWEAK_DEFAULTS);
+  const [tweaksOpen, setTweaksOpen] = React.useState(false);
 
-    <!-- ERROR BANNER -->
-    <div class="error-banner hidden" id="errorBanner">
-      <div class="error-banner-inner">
-        <span class="error-icon">⚠</span>
-        <div class="error-text">
-          <strong id="errorMessage">Error</strong>
-          <span id="errorHint"></span>
+  React.useEffect(() => {
+    window.addEventListener('message', e => {
+      if (e.data?.type === '__activate_edit_mode')   setTweaksOpen(true);
+      if (e.data?.type === '__deactivate_edit_mode') setTweaksOpen(false);
+    });
+    window.parent.postMessage({ type: '__edit_mode_available' }, '*');
+  }, []);
+
+  const applyTweak = (key, val) => {
+    const next = { ...tweaks, [key]: val };
+    setTweaks(next);
+    window.parent.postMessage({ type: '__edit_mode_set_keys', edits: next }, '*');
+    if (key === 'accentColor') document.documentElement.style.setProperty('--cyan', val);
+    if (key === 'gridLines')   document.body.style.backgroundImage = val
+      ? 'linear-gradient(rgba(0,212,255,0.022) 1px,transparent 1px),linear-gradient(90deg,rgba(0,212,255,0.022) 1px,transparent 1px)' : 'none';
+  };
+
+  React.useEffect(() => {
+    document.documentElement.style.setProperty('--cyan', tweaks.accentColor);
+  }, []);
+
+  // Persist nav
+  const goHome   = () => { setView('home');  sessionStorage.setItem('piq_view', JSON.stringify({ view:'home'  })); };
+  const goGames  = (sport) => { setSelectedSport(sport); setView('games'); sessionStorage.setItem('piq_view', JSON.stringify({ view:'games' })); };
+  const goDetail = (game)  => {
+    setSelectedGame(game); setView('detail');
+    sessionStorage.setItem('piq_game', JSON.stringify(game));
+    sessionStorage.setItem('piq_view', JSON.stringify({ view:'detail' }));
+  };
+
+  // Restore detail view from session
+  React.useEffect(() => {
+    if (view === 'detail' && !selectedGame) setView('games');
+  }, []);
+
+  const breadcrumb = {
+    home:   'PLAYIQ · SELECT SPORT',
+    games:  `${selectedSport.toUpperCase()} · TODAY'S GAMES`,
+    detail: selectedGame ? `${selectedGame.awayAbbr} @ ${selectedGame.homeAbbr}` : '—',
+  }[view];
+
+  return (
+    <>
+      {/* Nav */}
+      <nav className="topnav">
+        <div className="logo" onClick={goHome}>PLAY<span>IQ</span></div>
+        <div className="nav-sep" />
+        <div className="nav-bc">{breadcrumb}</div>
+        <ApiKeyInput />
+        <div className="nav-sep" />
+        <div className="nav-status">
+          <div className="nav-dot" />
+          <span>{window.API_BASE || 'localhost:3001'}</span>
         </div>
-        <button class="error-dismiss" onclick="document.getElementById('errorBanner').classList.add('hidden')">✕</button>
-      </div>
-    </div>
+      </nav>
 
-    <!-- GAMES CONTENT -->
-    <div id="dashboardContent"></div>
+      {/* Screens */}
+      <main>
+        {view === 'home'   && <div className="screen-enter"><HomeScreen   onSelectSport={goGames} /></div>}
+        {view === 'games'  && <div className="screen-enter"><GamesScreen  onSelectGame={goDetail} onBack={goHome} /></div>}
+        {view === 'detail' && selectedGame && <div className="screen-enter"><GameDetailScreen game={selectedGame} onBack={() => setView('games')} /></div>}
+      </main>
 
-  </section>
+      {/* Tweaks */}
+      <div className={`tweaks ${tweaksOpen ? 'open' : ''}`}>
+        <div className="tw-title">TWEAKS</div>
 
-  <!-- ── ANALYSIS PANEL ─────────────────────────────── -->
-  <section class="analysis-panel hidden" id="analysisPanel">
-
-    <!-- GAME HEADER -->
-    <div class="game-header" id="gameHeader">
-      <button class="back-btn" onclick="resetToDashboard()">← All Games</button>
-      <div class="game-title-block">
-        <div class="game-badge" id="gameSport">—</div>
-        <h2 class="game-title" id="gameTitle">Team A vs Team B</h2>
-        <div class="game-meta" id="gameMeta">—</div>
-      </div>
-      <div class="game-odds-strip" id="gameOddsStrip"></div>
-    </div>
-
-    <!-- LOADING STATE -->
-    <div class="full-loader hidden" id="fullLoader">
-      <div class="loader-inner">
-        <div class="loader-spinner"></div>
-        <div class="loader-steps" id="loaderSteps">
-          <span class="step active">Loading game data</span>
-          <span class="step">Fetching injuries</span>
-          <span class="step">Last 5 games</span>
-          <span class="step">Head-to-head history</span>
-          <span class="step">Rosters</span>
-          <span class="step">Generating AI plays</span>
-        </div>
-      </div>
-    </div>
-
-    <!-- TABS -->
-    <div class="tab-bar" id="tabBar">
-      <button class="tab active" data-tab="overview" onclick="switchTab('overview')">Overview</button>
-      <button class="tab" data-tab="roster" onclick="switchTab('roster')">Rosters</button>
-      <button class="tab" data-tab="form" onclick="switchTab('form')">Last 5 Games</button>
-      <button class="tab" data-tab="h2h" onclick="switchTab('h2h')">Head-to-Head</button>
-      <button class="tab" data-tab="props" onclick="switchTab('props')">Props Scout</button>
-      <button class="tab" data-tab="lineups" onclick="switchTab('lineups')" id="tabLineups" style="display:none">Lineups</button>
-      <button class="tab" data-tab="edges" onclick="switchTab('edges')" id="tabEdges" style="display:none">Edge Finder</button>
-      <button class="tab" data-tab="pitching" onclick="switchTab('pitching')" id="tabPitching" style="display:none">Pitching Edge</button>
-      <button class="tab" data-tab="lowhr" onclick="switchTab('lowhr')" id="tabLowHr" style="display:none">Low HR</button>
-      <button class="tab" data-tab="mlbedges" onclick="switchTab('mlbedges')" id="tabMlbEdges" style="display:none">Edge Finder</button>
-      <button class="tab tab-ai" data-tab="plays" onclick="switchTab('plays')">◆ AI Plays</button>
-    </div>
-
-    <!-- TAB CONTENT -->
-    <div class="tab-content">
-
-      <!-- OVERVIEW -->
-      <div class="tab-pane active" id="tab-overview">
-        <div class="two-col">
-          <div class="team-col" id="teamColAway"></div>
-          <div class="vs-divider">
-            <span>VS</span>
-            <div class="matchup-stats" id="matchupStats"></div>
+        <div className="tw-row">
+          <div className="tw-lbl">ACCENT COLOR</div>
+          <div className="tw-opts">
+            {[['#00d4ff','CYAN'],['#00ff88','GREEN'],['#ff6b35','EMBER'],['#a855f7','VIOLET'],['#ffd060','GOLD']].map(([c,l]) => (
+              <button key={c} className={`tw-btn ${tweaks.accentColor===c?'on':''}`}
+                style={tweaks.accentColor===c?{borderColor:c,color:c}:{}}
+                onClick={() => applyTweak('accentColor', c)}>{l}</button>
+            ))}
           </div>
-          <div class="team-col" id="teamColHome"></div>
         </div>
-        <div class="overview-charts" id="overviewCharts"></div>
-      </div>
 
-      <!-- ROSTER -->
-      <div class="tab-pane hidden" id="tab-roster">
-        <div class="roster-grid" id="rosterGrid"></div>
-      </div>
-
-      <!-- FORM (last 5) -->
-      <div class="tab-pane hidden" id="tab-form">
-        <div class="form-grid" id="formGrid"></div>
-      </div>
-
-      <!-- H2H -->
-      <div class="tab-pane hidden" id="tab-h2h">
-        <div id="h2hContent"></div>
-      </div>
-
-      <!-- PROPS SCOUT -->
-      <div class="tab-pane hidden" id="tab-props">
-        <div id="propsContent"></div>
-      </div>
-
-      <!-- LINEUPS (NBA only) -->
-      <div class="tab-pane hidden" id="tab-lineups">
-        <div id="lineupsContent"></div>
-      </div>
-
-      <!-- EDGE FINDER (NBA) -->
-      <div class="tab-pane hidden" id="tab-edges">
-        <div id="edgesContent"></div>
-      </div>
-
-      <!-- PITCHING EDGE (MLB) -->
-      <div class="tab-pane hidden" id="tab-pitching">
-        <div id="pitchingContent"></div>
-      </div>
-
-      <!-- LOW HR (MLB) -->
-      <div class="tab-pane hidden" id="tab-lowhr">
-        <div id="lowHrContent"></div>
-      </div>
-
-      <!-- MLB EDGE FINDER -->
-      <div class="tab-pane hidden" id="tab-mlbedges">
-        <div id="mlbEdgesContent"></div>
-      </div>
-
-<!-- AI PLAYS -->
-      <div class="tab-pane hidden" id="tab-plays">
-        <div class="plays-layout">
-
-          <!-- AI RECOMMENDED -->
-          <div class="plays-section" id="aiPlaysSection">
-            <div class="section-head">
-              <h3>◆ AI Recommended Plays</h3>
-              <span class="powered">Powered by Claude</span>
-            </div>
-            <div id="aiPlaysList"></div>
+        <div className="tw-row">
+          <div className="tw-lbl">GRID LINES</div>
+          <div className="tw-opts">
+            {[['true','ON'],['false','OFF']].map(([v,l]) => (
+              <button key={v} className={`tw-btn ${String(tweaks.gridLines)===v?'on':''}`}
+                onClick={() => applyTweak('gridLines', v==='true')}>{l}</button>
+            ))}
           </div>
+        </div>
 
-          <!-- YOUR PLAY DISCUSSION -->
-          <div class="plays-section your-play-section">
-            <div class="section-head">
-              <h3>Your Play</h3>
-              <span class="powered">Discuss with Claude</span>
-            </div>
-            <div class="your-play-input">
-              <textarea id="userPlay" placeholder="Enter your play... e.g. 'Lakers -4.5' or 'Over 224.5' or 'LeBron over 25.5 pts' or a parlay..."></textarea>
-              <button class="discuss-btn" onclick="discussUserPlay()">DISCUSS →</button>
-            </div>
-            <div id="userPlayResult" class="user-play-result hidden"></div>
+        <div className="tw-row">
+          <div className="tw-lbl">SCANLINES</div>
+          <div className="tw-opts">
+            {[['true','ON'],['false','OFF']].map(([v,l]) => (
+              <button key={v} className={`tw-btn ${String(tweaks.scanlines)===v?'on':''}`}
+                onClick={() => {
+                  applyTweak('scanlines', v==='true');
+                  document.body.style.setProperty('--scanlines-opacity', v==='true'?'1':'0');
+                }}>{l}</button>
+            ))}
           </div>
-
         </div>
       </div>
+    </>
+  );
+}
 
-    </div>
-  </section>
-
-  <!-- PLAYER STATS MODAL -->
-  <div class="player-modal hidden" id="playerModal" onclick="closePlayerModal(event)">
-    <div class="player-modal-inner">
-      <div class="player-modal-header">
-        <img class="player-modal-headshot" id="playerModalHeadshot" src="" alt="" onerror="this.style.display='none'">
-        <span class="player-modal-name" id="playerModalName"></span>
-        <button class="player-modal-close" onclick="document.getElementById('playerModal').classList.add('hidden')">✕</button>
-      </div>
-      <!-- Modal tabs -->
-      <div class="pm-tab-bar">
-        <button class="pm-tab active" id="pmTabStats" onclick="switchPlayerModalTab('stats', this)">Stats</button>
-        <button class="pm-tab" id="pmTabResearch" onclick="switchPlayerModalTab('research', this)">Research</button>
-      </div>
-      <!-- Stats view -->
-      <div id="playerModalStatsView">
-        <div class="stat-toggle" id="playerModalStatBtns" style="margin:12px 0 8px"></div>
-        <div id="playerModalLoading" class="inline-loader hidden"><div class="mini-spin"></div> Loading stats...</div>
-        <canvas id="playerModalChart" height="200"></canvas>
-      </div>
-      <!-- Research view -->
-      <div id="playerModalResearchView" class="hidden">
-        <div id="playerModalResearchContent"></div>
-      </div>
-    </div>
-  </div>
-
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-  <!-- Sport configs — loaded before app.js -->
-  <script src="sports/nba/config.js"></script>
-  <script src="sports/nba/tabs.js"></script>
-  <script src="sports/mlb/config.js"></script>
-  <script src="sports/mlb/tabs.js"></script>
-  <script src="sports/nhl/config.js"></script>
-  <script src="sports/ncaab/config.js"></script>
-  <script src="app.js"></script>
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+</script>
 </body>
 </html>
