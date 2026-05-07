@@ -42,6 +42,9 @@ function NbaEdgeFinderTab({ gameData }) {
               <span style={{ fontSize: 9, padding: '2px 7px', border: `1px solid ${p.teamColor}66`, color: p.teamColor, fontFamily: 'Space Mono, monospace', borderRadius: 2, letterSpacing: '0.08em' }}>{p.teamAbbr}</span>
               <span style={{ fontSize: 9, padding: '2px 7px', border: `1px solid ${p.teamColor}44`, color: p.teamColor, fontFamily: 'Space Mono, monospace', borderRadius: 2 }}>{p.pos}</span>
               {p.jersey && p.jersey !== '—' && <span style={{ fontSize: 9, color: 'var(--dim)', fontFamily: 'Space Mono, monospace' }}>#{p.jersey}</span>}
+              {p.isStarter && (
+                <span style={{ fontSize: 9, padding: '2px 7px', background: 'rgba(0,255,136,0.12)', border: '1px solid rgba(0,255,136,0.35)', color: 'var(--green)', fontFamily: 'Orbitron, monospace', fontWeight: 700, borderRadius: 2, letterSpacing: '0.15em' }}>★ STARTER</span>
+              )}
               <HotBadge tier={p.hotTier} />
             </div>
             <div style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.05em' }}>
@@ -410,11 +413,105 @@ function NbaInjuryReport({ injuries, awayAbbr, homeAbbr, awayColor, homeColor })
   );
 }
 
+function _formatLineupTimestamp(ts) {
+  if (!ts) return '—';
+  const diff = Date.now() - ts;
+  if (diff < 30 * 1000) return 'just now';
+  if (diff < 60 * 1000) return `${Math.floor(diff / 1000)}s ago`;
+  if (diff < 60 * 60 * 1000) return `${Math.floor(diff / 60000)}m ago`;
+  return new Date(ts).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+}
+
+function _statusColor(status) {
+  if (status === 'confirmed') return 'var(--green)';
+  if (status === 'expected') return 'var(--cyan)';
+  if (status === 'projected') return 'var(--gold)';
+  return 'var(--muted)';
+}
+
+function NbaLineupStatusBanner({ data, awayAbbr, homeAbbr, awayColor, homeColor, onRefresh, refreshing }) {
+  // Forces a re-render once per second so the "Last updated" stamp stays fresh
+  const [, tick] = React.useReducer(x => x + 1, 0);
+  React.useEffect(() => {
+    const id = setInterval(tick, 5000);
+    return () => clearInterval(id);
+  }, []);
+
+  const status = data?.lineupStatus || {};
+  const awayStatus = status.away || (data?.source === 'rotowire' ? 'unknown' : '—');
+  const homeStatus = status.home || (data?.source === 'rotowire' ? 'unknown' : '—');
+  const sourceLabel = data?.source === 'rotowire' ? 'ROTOWIRE'
+    : data?.source === 'espn-boxscore' ? 'ESPN BOXSCORE'
+    : 'MINUTES HEURISTIC';
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px',
+      background: 'rgba(0,212,255,0.04)', border: '1px solid rgba(0,212,255,0.12)',
+      borderRadius: 4, marginBottom: 14, flexWrap: 'wrap' }}>
+      <span style={{ fontSize: 9, fontFamily: 'Orbitron, monospace', fontWeight: 700, color: 'var(--cyan)', letterSpacing: '0.18em' }}>
+        SOURCE · {sourceLabel}
+      </span>
+      <span style={{ fontSize: 9, fontFamily: 'Space Mono, monospace', color: 'var(--dim)', letterSpacing: '0.1em' }}>·</span>
+      <span style={{ fontSize: 10, fontFamily: 'Space Mono, monospace', display: 'flex', alignItems: 'center', gap: 6 }}>
+        <span style={{ color: awayColor, fontWeight: 700 }}>{awayAbbr}</span>
+        <span style={{ color: _statusColor(awayStatus), letterSpacing: '0.1em', textTransform: 'uppercase' }}>{awayStatus}</span>
+      </span>
+      <span style={{ fontSize: 10, fontFamily: 'Space Mono, monospace', display: 'flex', alignItems: 'center', gap: 6 }}>
+        <span style={{ color: homeColor, fontWeight: 700 }}>{homeAbbr}</span>
+        <span style={{ color: _statusColor(homeStatus), letterSpacing: '0.1em', textTransform: 'uppercase' }}>{homeStatus}</span>
+      </span>
+      <span style={{ fontSize: 9, fontFamily: 'Space Mono, monospace', color: 'var(--dim)', letterSpacing: '0.1em', marginLeft: 'auto' }}>
+        UPDATED · {_formatLineupTimestamp(data?.fetchedAt)}
+      </span>
+      <button onClick={onRefresh} disabled={refreshing}
+        style={{ padding: '4px 12px', background: refreshing ? 'transparent' : 'rgba(0,212,255,0.08)',
+          border: `1px solid ${refreshing ? 'rgba(255,255,255,0.06)' : 'rgba(0,212,255,0.25)'}`,
+          color: refreshing ? 'var(--dim)' : 'var(--cyan)', fontFamily: 'Space Mono, monospace',
+          fontSize: 9, cursor: refreshing ? 'default' : 'pointer', borderRadius: 2, letterSpacing: '0.12em' }}>
+        {refreshing ? 'REFRESHING…' : '↻ REFRESH'}
+      </button>
+    </div>
+  );
+}
+
 function NbaLineupTab({ gameData }) {
-  const { gameInfo, nbaLineupData, injuries } = gameData || {};
-  if (!nbaLineupData) {
+  const { gameInfo, nbaLineupData, injuries, awayRoster, homeRoster } = gameData || {};
+  const [data, setData] = React.useState(nbaLineupData);
+  const [refreshing, setRefreshing] = React.useState(false);
+  const refreshingRef = React.useRef(false);
+
+  // Sync external updates (e.g. when game changes)
+  React.useEffect(() => { setData(nbaLineupData); }, [nbaLineupData]);
+
+  const refresh = React.useCallback(async () => {
+    if (refreshingRef.current) return;
+    refreshingRef.current = true;
+    setRefreshing(true);
+    try {
+      const fresh = await buildNbaLineupData(gameInfo, awayRoster, homeRoster, { refresh: true });
+      if (fresh) setData(fresh);
+    } catch (e) {
+      console.warn('NBA lineup refresh failed:', e);
+    } finally {
+      refreshingRef.current = false;
+      setRefreshing(false);
+    }
+  }, [gameInfo, awayRoster, homeRoster]);
+
+  // Auto-poll: every 60s when lineups are unconfirmed, every 5min once confirmed.
+  // Stops when this tab unmounts.
+  React.useEffect(() => {
+    const status = data?.lineupStatus;
+    const allConfirmed = status?.away === 'confirmed' && status?.home === 'confirmed';
+    const intervalMs = allConfirmed ? 5 * 60 * 1000 : 60 * 1000;
+    const id = setInterval(refresh, intervalMs);
+    return () => clearInterval(id);
+  }, [data?.lineupStatus?.away, data?.lineupStatus?.home, refresh]);
+
+  if (!data) {
     return <div style={emptyMsg}>Lineup data loading or unavailable.</div>;
   }
+
   const awayColor = '#00d4ff';
   const homeColor = '#ffd060';
 
@@ -425,10 +522,15 @@ function NbaLineupTab({ gameData }) {
         awayColor={awayColor} homeColor={homeColor} />
 
       <SectionHeader label="STARTING LINEUPS · POSITION MATCHUPS"
-        sub={`${gameInfo.awayAbbr} vs ${gameInfo.homeAbbr} · most-played player at each position · season / L5 / head-to-head averages`} />
+        sub={`${gameInfo.awayAbbr} vs ${gameInfo.homeAbbr} · season / L5 / head-to-head averages · auto-refreshes`} />
+
+      <NbaLineupStatusBanner data={data}
+        awayAbbr={gameInfo.awayAbbr} homeAbbr={gameInfo.homeAbbr}
+        awayColor={awayColor} homeColor={homeColor}
+        onRefresh={refresh} refreshing={refreshing} />
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-        {nbaLineupData.matchups.map(m => (
+        {data.matchups.map(m => (
           <NbaMatchupRow key={m.position} matchup={m}
             awayAbbr={gameInfo.awayAbbr} homeAbbr={gameInfo.homeAbbr}
             awayColor={awayColor} homeColor={homeColor} />

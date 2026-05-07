@@ -14,6 +14,10 @@ const {
   findGamePkByAbbrDate,
   findGamePkByTeams,
 } = require('./mlb/service');
+const {
+  getNbaStartingLineups,
+  findGameLineup: findNbaGameLineup,
+} = require('./nba/service');
 
 const PORT = 3001;
 
@@ -97,6 +101,24 @@ const server = http.createServer(async (req, res) => {
       if (!gamePk) return sendJson(res, { weather: null, gamePk: null });
       const weather = await fetchGameWeather(gamePk);
       return sendJson(res, { weather, gamePk });
+    }
+
+    // GET /api/nba/starting-lineups
+    //   Returns Rotowire-confirmed starting 5s for every NBA game today
+    //   with specific PG/SG/SF/PF/C positions.
+    // GET /api/nba/starting-lineups?away=PHI&home=NYK
+    //   Returns just that one matchup (or null if not found).
+    // Add &refresh=1 to bypass the 5-min cache.
+    if (path === '/api/nba/starting-lineups') {
+      const refresh = url.searchParams.get('refresh') === '1';
+      const away = url.searchParams.get('away');
+      const home = url.searchParams.get('home');
+      const all = await getNbaStartingLineups({ refresh });
+      if (away && home) {
+        const game = findNbaGameLineup(all, away, home);
+        return sendJson(res, { source: all.source, fetchedAt: all.fetchedAt, game });
+      }
+      return sendJson(res, all);
     }
 
     // Health check
