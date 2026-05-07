@@ -18,6 +18,11 @@ const {
   getNbaStartingLineups,
   findGameLineup: findNbaGameLineup,
 } = require('./nba/service');
+const {
+  getPositionalDefense,
+  findRow: findPositionalDefenseRow,
+} = require('./nba/positional-defense');
+const { resolvePosition, getPositionMap } = require('./nba/positions');
 
 const PORT = 3001;
 
@@ -119,6 +124,71 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, { source: all.source, fetchedAt: all.fetchedAt, game });
       }
       return sendJson(res, all);
+    }
+
+    // GET /api/nba/positional-defense-points
+    //   Optional filters: ?team=UTA  ?position=PG  (combine to get a single row)
+    //   ?refresh=1 forces a re-crawl (slow on first run; ~3-6 min)
+    //   ?season=2025-26 to query a specific season (defaults to current)
+    if (path === '/api/nba/positional-defense-points') {
+      const refresh = url.searchParams.get('refresh') === '1';
+      const team = url.searchParams.get('team');
+      const position = url.searchParams.get('position');
+      const season = url.searchParams.get('season');
+      const table = await getPositionalDefense({ refresh, season });
+      let rows = table.rows;
+      if (team) rows = rows.filter(r => r.defensive_team === team.toUpperCase());
+      if (position) rows = rows.filter(r => r.position === position.toUpperCase());
+      return sendJson(res, {
+        season: table.season,
+        builtAt: table.builtAt,
+        source: table.source,
+        games_in_aggregate: table.games_in_aggregate,
+        position_map_size: table.position_map_size,
+        count: rows.length,
+        rows,
+      });
+    }
+
+    // GET /api/nba/edge-finder/positional-points?away=PHI&home=NYK
+    //   For each starter in tonight's lineup, returns the opponent's
+    //   defense-vs-position number plus a strong-matchup signal.
+    if (path === '/api/nba/edge-finder/positional-points') {
+      const away = url.searchParams.get('away');
+      const home = url.searchParams.get('home');
+      if (!away || !home) return sendError(res, 'away and home team abbreviations required');
+      const refresh = url.searchParams.get('refresh') === '1';
+
+      const [lineups, table, positionMap] = await Promise.all([
+        getNbaStartingLineups({ refresh }),
+        getPositionalDefense({ refresh }),
+        getPositionMap({}),
+      ]);
+      const game = findNbaGameLineup(lineups, away, home);
+      if (!game) return sendError(res, `No Rotowire lineup found for ${away} @ ${home}`, 404);
+
+      const buildSide = (starters, oppAbbr) => starters.map(s => {
+        // Prefer Rotowire's specific position; fall back to BR map by name
+        const pos = (s.pos || '').toUpperCase()
+          || resolvePosition(s.name, positionMap);
+        const row = findPositionalDefenseRow(table, oppAbbr, pos);
+        return {
+          player: s.name,
+          position: pos || null,
+          opponent: oppAbbr,
+          points_allowed_per_48: row?.points_allowed_per_48 ?? null,
+          rank: row?.rank ?? null,
+          signal: row?.signal ?? null,
+          games_sampled: row?.games_sampled ?? 0,
+        };
+      });
+
+      return sendJson(res, {
+        season: table.season,
+        builtAt: table.builtAt,
+        away: { abbr: game.awayAbbr, status: game.away?.status, players: buildSide(game.away?.starters || [], game.homeAbbr) },
+        home: { abbr: game.homeAbbr, status: game.home?.status, players: buildSide(game.home?.starters || [], game.awayAbbr) },
+      });
     }
 
     // Health check

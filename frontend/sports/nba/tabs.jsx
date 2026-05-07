@@ -156,7 +156,66 @@ function _nbaPickEdge(awayVal, homeVal, lowerIsBetter) {
   return awayBetter ? 'away' : 'home';
 }
 
-function NbaPlayerColumn({ player, accent, align }) {
+// Top 50 / Mid 50 / Bottom 50 color tokens for the defense chip
+const NBA_DEF_COLORS = {
+  green:  { bg: 'rgba(0,255,136,0.10)',  border: 'rgba(0,255,136,0.45)',  text: '#5ff5a5', label: 'TOP 50 · STRONG' },
+  yellow: { bg: 'rgba(255,208,96,0.10)', border: 'rgba(255,208,96,0.40)', text: '#ffd060', label: 'MID 50 · AVG' },
+  red:    { bg: 'rgba(255,107,53,0.12)', border: 'rgba(255,107,53,0.45)', text: '#ff8a55', label: 'BOTTOM 50 · WEAK' },
+};
+
+function NbaDefenseLegend() {
+  const items = [
+    { tier: 'green', label: 'TOP 50 · Strong defense (rank 1-50) · downgrade target' },
+    { tier: 'yellow', label: 'MID 50 · Average defense (rank 51-100) · neutral matchup' },
+    { tier: 'red', label: 'BOTTOM 50 · Weak defense (rank 101-150) · upgrade target' },
+  ];
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 12px', marginBottom: 12,
+      background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 4, flexWrap: 'wrap' }}>
+      <span style={{ fontSize: 9, fontFamily: 'Orbitron, monospace', color: 'var(--dim)', letterSpacing: '0.18em' }}>
+        DEFENSE VS POSITION
+      </span>
+      {items.map(it => {
+        const c = NBA_DEF_COLORS[it.tier];
+        return (
+          <div key={it.tier} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ width: 8, height: 8, borderRadius: 2, background: c.bg, border: `1px solid ${c.border}` }} />
+            <span style={{ fontSize: 9, fontFamily: 'Space Mono, monospace', color: c.text, letterSpacing: '0.05em' }}>
+              {it.label}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function NbaDefenseChip({ edge, align }) {
+  if (!edge || edge.rank == null || edge.points_allowed_per_48 == null) {
+    return (
+      <div style={{ fontSize: 9, fontFamily: 'Space Mono, monospace', color: 'var(--dim)', letterSpacing: '0.08em', textAlign: align }}>
+        NO DEFENSE DATA
+      </div>
+    );
+  }
+  const tier = nbaDefenseRankColor(edge.rank);
+  const c = NBA_DEF_COLORS[tier] || NBA_DEF_COLORS.yellow;
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: align === 'right' ? 'flex-end' : 'flex-start', gap: 3 }}>
+      <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '3px 8px',
+        background: c.bg, border: `1px solid ${c.border}`, borderRadius: 2 }}>
+        <span style={{ fontSize: 9, fontFamily: 'Orbitron, monospace', fontWeight: 700, color: c.text, letterSpacing: '0.15em' }}>
+          vs {edge.opponent} {edge.position} · #{edge.rank}/150
+        </span>
+      </div>
+      <div style={{ fontSize: 9, fontFamily: 'Space Mono, monospace', color: c.text, letterSpacing: '0.08em' }}>
+        {edge.points_allowed_per_48.toFixed(1)} pts/48 allowed · {c.label}
+      </div>
+    </div>
+  );
+}
+
+function NbaPlayerColumn({ player, accent, align, defenseEdge }) {
   if (!player) {
     return (
       <div style={{ flex: 1, padding: 12, opacity: 0.4, textAlign: align, fontFamily: 'Space Mono, monospace', fontSize: 10, color: 'var(--dim)', letterSpacing: '0.1em' }}>
@@ -165,7 +224,7 @@ function NbaPlayerColumn({ player, accent, align }) {
     );
   }
   return (
-    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: align === 'right' ? 'flex-end' : 'flex-start', gap: 4 }}>
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: align === 'right' ? 'flex-end' : 'flex-start', gap: 8 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexDirection: align === 'right' ? 'row-reverse' : 'row' }}>
         <PlayerCard player={{ name: player.name, headshot: player.headshot, pos: player.pos }} size="sm" accent={accent} />
         <div style={{ textAlign: align }}>
@@ -175,6 +234,7 @@ function NbaPlayerColumn({ player, accent, align }) {
           </div>
         </div>
       </div>
+      <NbaDefenseChip edge={defenseEdge} align={align} />
     </div>
   );
 }
@@ -210,7 +270,7 @@ function NbaStatRow({ label, awayVal, homeVal, fmt, lowerIsBetter, awayColor, ho
   );
 }
 
-function NbaMatchupRow({ matchup, awayAbbr, homeAbbr, awayColor, homeColor }) {
+function NbaMatchupRow({ matchup, awayAbbr, homeAbbr, awayColor, homeColor, defenseEdge }) {
   const [mode, setMode] = React.useState('season'); // 'season' | 'h2h' | 'l5'
   const a = matchup.away;
   const h = matchup.home;
@@ -218,6 +278,10 @@ function NbaMatchupRow({ matchup, awayAbbr, homeAbbr, awayColor, homeColor }) {
   const hStats = h ? h[mode] : null;
   const aGames = a ? (mode === 'h2h' ? a.h2hCount : a[mode]?.games) : 0;
   const hGames = h ? (mode === 'h2h' ? h.h2hCount : h[mode]?.games) : 0;
+
+  // Defense matchup lookup: away player faces home defense, vice versa
+  const awayDefense = a ? findNbaDefenseEdge(defenseEdge, a.name, 'away') : null;
+  const homeDefense = h ? findNbaDefenseEdge(defenseEdge, h.name, 'home') : null;
 
   return (
     <HudCard style={{ padding: 18 }} accent={'var(--cyan)'}>
@@ -241,10 +305,10 @@ function NbaMatchupRow({ matchup, awayAbbr, homeAbbr, awayColor, homeColor }) {
         </div>
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 12 }}>
-        <NbaPlayerColumn player={a} accent={awayColor} align="left" />
-        <div style={{ fontFamily: 'Orbitron, monospace', fontSize: 11, color: 'var(--dim)', letterSpacing: '0.15em' }}>VS</div>
-        <NbaPlayerColumn player={h} accent={homeColor} align="right" />
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, marginBottom: 12 }}>
+        <NbaPlayerColumn player={a} accent={awayColor} align="left" defenseEdge={awayDefense} />
+        <div style={{ fontFamily: 'Orbitron, monospace', fontSize: 11, color: 'var(--dim)', letterSpacing: '0.15em', paddingTop: 14 }}>VS</div>
+        <NbaPlayerColumn player={h} accent={homeColor} align="right" defenseEdge={homeDefense} />
       </div>
 
       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9, fontFamily: 'Space Mono, monospace', color: 'var(--muted)', letterSpacing: '0.1em', marginBottom: 8, padding: '6px 0', borderTop: '1px solid rgba(255,255,255,0.05)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
@@ -475,21 +539,29 @@ function NbaLineupStatusBanner({ data, awayAbbr, homeAbbr, awayColor, homeColor,
 }
 
 function NbaLineupTab({ gameData }) {
-  const { gameInfo, nbaLineupData, injuries, awayRoster, homeRoster } = gameData || {};
+  const { gameInfo, nbaLineupData, nbaDefenseEdge, injuries, awayRoster, homeRoster } = gameData || {};
   const [data, setData] = React.useState(nbaLineupData);
+  const [defenseEdge, setDefenseEdge] = React.useState(nbaDefenseEdge);
   const [refreshing, setRefreshing] = React.useState(false);
   const refreshingRef = React.useRef(false);
 
   // Sync external updates (e.g. when game changes)
   React.useEffect(() => { setData(nbaLineupData); }, [nbaLineupData]);
+  React.useEffect(() => { setDefenseEdge(nbaDefenseEdge); }, [nbaDefenseEdge]);
 
   const refresh = React.useCallback(async () => {
     if (refreshingRef.current) return;
     refreshingRef.current = true;
     setRefreshing(true);
     try {
-      const fresh = await buildNbaLineupData(gameInfo, awayRoster, homeRoster, { refresh: true });
-      if (fresh) setData(fresh);
+      // Pull lineups + positional defense in parallel — both keyed on starters,
+      // so a roster change must update both signals together.
+      const [freshLineup, freshDefense] = await Promise.all([
+        buildNbaLineupData(gameInfo, awayRoster, homeRoster, { refresh: true }),
+        fetchNbaPositionalDefenseEdge(gameInfo, { refresh: true }),
+      ]);
+      if (freshLineup) setData(freshLineup);
+      if (freshDefense) setDefenseEdge(freshDefense);
     } catch (e) {
       console.warn('NBA lineup refresh failed:', e);
     } finally {
@@ -529,15 +601,192 @@ function NbaLineupTab({ gameData }) {
         awayColor={awayColor} homeColor={homeColor}
         onRefresh={refresh} refreshing={refreshing} />
 
+      <NbaDefenseLegend />
+
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         {data.matchups.map(m => (
           <NbaMatchupRow key={m.position} matchup={m}
             awayAbbr={gameInfo.awayAbbr} homeAbbr={gameInfo.homeAbbr}
-            awayColor={awayColor} homeColor={homeColor} />
+            awayColor={awayColor} homeColor={homeColor}
+            defenseEdge={defenseEdge} />
         ))}
       </div>
     </div>
   );
 }
 
-Object.assign(window, { NbaEdgeFinderTab, NbaLineupTab });
+/* ============================================================
+   NBA DEFENSE VS POSITION TAB
+   Sortable table of how each team defends each position across
+   PTS / FG% / FT% / 3PM / REB / AST / STL / BLK / TO. Cells are
+   colored Top 50 (green) / Mid 50 (yellow) / Bottom 50 (red)
+   based on the rank of that stat (lower allowed = stronger D).
+   ============================================================ */
+
+const NBA_DVP_COLUMNS = [
+  { key: 'pts',      label: 'PTS',  valKey: 'points_allowed_per_48', fmt: v => v?.toFixed(1) ?? '—' },
+  { key: 'fg_pct',   label: 'FG%',  valKey: 'fg_pct',                fmt: v => v != null ? (v * 100).toFixed(1) : '—' },
+  { key: 'ft_pct',   label: 'FT%',  valKey: 'ft_pct',                fmt: v => v != null ? (v * 100).toFixed(1) : '—' },
+  { key: 'three_pm', label: '3PM',  valKey: 'three_pm_per_48',       fmt: v => v?.toFixed(1) ?? '—' },
+  { key: 'reb',      label: 'REB',  valKey: 'reb_per_48',            fmt: v => v?.toFixed(1) ?? '—' },
+  { key: 'ast',      label: 'AST',  valKey: 'ast_per_48',            fmt: v => v?.toFixed(1) ?? '—' },
+  { key: 'stl',      label: 'STL',  valKey: 'stl_per_48',            fmt: v => v?.toFixed(1) ?? '—' },
+  { key: 'blk',      label: 'BLK',  valKey: 'blk_per_48',            fmt: v => v?.toFixed(1) ?? '—' },
+  { key: 'to',       label: 'TO',   valKey: 'to_per_48',             fmt: v => v?.toFixed(1) ?? '—' },
+];
+
+function _dvpCellColor(rank) {
+  const tier = nbaDefenseRankColor(rank);
+  return NBA_DEF_COLORS[tier] || null;
+}
+
+function NbaDefenseStatCell({ value, rank, fmt }) {
+  const c = _dvpCellColor(rank);
+  const display = fmt(value);
+  return (
+    <td style={{
+      padding: '8px 10px',
+      background: c ? c.bg : 'transparent',
+      borderLeft: c ? `2px solid ${c.border}` : '2px solid transparent',
+      textAlign: 'center',
+      fontFamily: 'Space Mono, monospace',
+    }}>
+      <div style={{ fontSize: 12, fontWeight: 700, color: c ? c.text : 'var(--text)' }}>{display}</div>
+      <div style={{ fontSize: 9, color: 'var(--dim)', letterSpacing: '0.06em', marginTop: 2 }}>
+        #{rank ?? '—'}
+      </div>
+    </td>
+  );
+}
+
+function NbaDefenseVsPositionTab({ gameData }) {
+  const { gameInfo, nbaDefenseTable } = gameData || {};
+  const [scope, setScope] = React.useState('matchup'); // 'matchup' | 'all'
+  const [sortKey, setSortKey] = React.useState('pts');
+  const [sortDir, setSortDir] = React.useState('asc'); // 'asc' = stronger D first
+
+  if (!nbaDefenseTable) {
+    return <div style={emptyMsg}>Defense vs Position table loading or unavailable.</div>;
+  }
+
+  // Filter rows depending on scope
+  const matchupTeams = new Set([gameInfo.awayAbbr, gameInfo.homeAbbr].map(s => String(s || '').toUpperCase()));
+  // Backend uses canonical NBA abbrs (NYK, GSW, etc.) so map ESPN short forms
+  const ESPN_TO_CANON = { GS: 'GSW', NO: 'NOP', NY: 'NYK', SA: 'SAS', UTAH: 'UTA', WSH: 'WAS', PHX: 'PHO' };
+  const canonAway = ESPN_TO_CANON[gameInfo.awayAbbr] || gameInfo.awayAbbr;
+  const canonHome = ESPN_TO_CANON[gameInfo.homeAbbr] || gameInfo.homeAbbr;
+  const matchupCanon = new Set([canonAway, canonHome]);
+
+  const baseRows = nbaDefenseTable.rows || [];
+  const visible = scope === 'matchup'
+    ? baseRows.filter(r => matchupCanon.has(r.defensive_team))
+    : baseRows;
+
+  // Sort
+  const sortCol = NBA_DVP_COLUMNS.find(c => c.key === sortKey);
+  const sorted = visible.slice().sort((a, b) => {
+    if (sortKey === 'team') {
+      const cmp = (a.defensive_team || '').localeCompare(b.defensive_team || '');
+      return sortDir === 'asc' ? cmp : -cmp;
+    }
+    if (sortKey === 'position') {
+      const order = { PG: 0, SG: 1, SF: 2, PF: 3, C: 4 };
+      const cmp = (order[a.position] ?? 99) - (order[b.position] ?? 99);
+      return sortDir === 'asc' ? cmp : -cmp;
+    }
+    const av = a[sortCol.valKey] ?? 0;
+    const bv = b[sortCol.valKey] ?? 0;
+    return sortDir === 'asc' ? av - bv : bv - av;
+  });
+
+  const onSort = (key) => {
+    if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortKey(key); setSortDir('asc'); }
+  };
+
+  const sortIndicator = (key) => sortKey === key ? (sortDir === 'asc' ? ' ▲' : ' ▼') : '';
+
+  const headerCellStyle = {
+    padding: '8px 10px', textAlign: 'center', cursor: 'pointer',
+    fontFamily: 'Space Mono, monospace', fontSize: 9, letterSpacing: '0.18em',
+    color: 'var(--cyan)', borderBottom: '1px solid rgba(0,212,255,0.18)',
+    userSelect: 'none', whiteSpace: 'nowrap',
+  };
+
+  return (
+    <div style={{ padding: '20px 0' }}>
+      <SectionHeader label="DEFENSE vs POSITION"
+        sub={`${nbaDefenseTable.season || ''} season · ${nbaDefenseTable.games_in_aggregate ?? 0} games sampled · per-48 (or %) allowed to opposing position`} />
+
+      {/* Scope toggle + legend */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 4 }}>
+          {[
+            ['matchup', `${gameInfo.awayAbbr} & ${gameInfo.homeAbbr}`],
+            ['all', 'ALL 30 TEAMS'],
+          ].map(([v, l]) => (
+            <button key={v} onClick={() => setScope(v)}
+              style={{ padding: '4px 12px', background: scope === v ? 'rgba(0,212,255,0.1)' : 'transparent',
+                border: `1px solid ${scope === v ? 'rgba(0,212,255,0.3)' : 'rgba(255,255,255,0.06)'}`,
+                color: scope === v ? 'var(--cyan)' : 'var(--dim)', fontFamily: 'Space Mono, monospace',
+                fontSize: 10, cursor: 'pointer', borderRadius: 2, letterSpacing: '0.1em' }}>
+              {l}
+            </button>
+          ))}
+        </div>
+        <span style={{ fontSize: 9, color: 'var(--dim)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.1em', marginLeft: 'auto' }}>
+          CLICK ANY HEADER TO SORT
+        </span>
+      </div>
+
+      <NbaDefenseLegend />
+
+      {/* Table */}
+      <div style={{ overflowX: 'auto', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 4 }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'Space Mono, monospace' }}>
+          <thead>
+            <tr style={{ background: 'rgba(0,212,255,0.04)' }}>
+              <th style={headerCellStyle} onClick={() => onSort('position')}>POSITION{sortIndicator('position')}</th>
+              <th style={headerCellStyle} onClick={() => onSort('team')}>TEAM{sortIndicator('team')}</th>
+              {NBA_DVP_COLUMNS.map(col => (
+                <th key={col.key} style={headerCellStyle} onClick={() => onSort(col.key)}>
+                  {col.label}{sortIndicator(col.key)}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.map((r, i) => {
+              const teamColor = r.defensive_team === canonAway ? '#00d4ff'
+                : r.defensive_team === canonHome ? '#ffd060'
+                : 'var(--text)';
+              return (
+                <tr key={`${r.defensive_team}-${r.position}`}
+                  style={{ background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.015)' }}>
+                  <td style={{ padding: '8px 10px', textAlign: 'center', fontWeight: 700, fontSize: 11, color: 'var(--text)', letterSpacing: '0.1em' }}>
+                    {r.position}
+                  </td>
+                  <td style={{ padding: '8px 10px', textAlign: 'center', fontWeight: 700, fontSize: 11, color: teamColor, letterSpacing: '0.1em' }}>
+                    {r.defensive_team}
+                  </td>
+                  {NBA_DVP_COLUMNS.map(col => (
+                    <NbaDefenseStatCell key={col.key}
+                      value={r[col.valKey]}
+                      rank={r.ranks?.[col.key]}
+                      fmt={col.fmt} />
+                  ))}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      <div style={{ fontSize: 9, color: 'var(--dim)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.08em', marginTop: 10 }}>
+        EACH CELL: VALUE OVER LEAGUE RANK · #1/150 = STRONGEST DEFENSE FOR THAT STAT · {sorted.length} ROWS
+      </div>
+    </div>
+  );
+}
+
+Object.assign(window, { NbaEdgeFinderTab, NbaLineupTab, NbaDefenseVsPositionTab });

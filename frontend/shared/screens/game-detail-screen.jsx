@@ -19,6 +19,7 @@ const TABS_NBA = [
   { id: 'form', label: 'LAST 5' },
   { id: 'roster', label: 'ROSTERS' },
   { id: 'lineups', label: 'LINEUPS' },
+  { id: 'def-vs-pos', label: 'DEFENSE vs POSITION' },
   { id: 'edges', label: 'EDGE FINDER' },
   { id: 'ai', label: '◆ AI PLAYS' },
 ];
@@ -63,22 +64,24 @@ function GameDetailScreen({ game, onBack }) {
         const h2h = await fetchH2H(game);
         setStepIdx(4);
 
-        let mlbEdgeData = null, pitchingData = null, nbaEdgeData = null, nbaLineupData = null;
+        let mlbEdgeData = null, pitchingData = null, nbaEdgeData = null, nbaLineupData = null, nbaDefenseEdge = null, nbaDefenseTable = null;
         if (game.sportKey === 'mlb') {
           const starterData = await fetchMlbStarters(game);
           const bvpData = await fetchGameBvp(game, starterData.lineups, starterData.pitchers);
           mlbEdgeData = await buildMlbEdgeData(game, bvpData);
           pitchingData = { pitchers: starterData.pitchers };
         } else if (game.sportKey === 'nba') {
-          [nbaEdgeData, nbaLineupData] = await Promise.all([
+          [nbaEdgeData, nbaLineupData, nbaDefenseEdge, nbaDefenseTable] = await Promise.all([
             buildNbaEdgeData(game),
             buildNbaLineupData(game, awayRoster, homeRoster),
+            fetchNbaPositionalDefenseEdge(game),
+            fetchNbaDefenseVsPositionTable(),
           ]);
         }
         setStepIdx(5);
 
         if (!cancelled) {
-          setGameData({ gameInfo: game, awayForm, homeForm, injuries, awayRoster, homeRoster, h2h, mlbEdgeData, pitchingData, nbaEdgeData, nbaLineupData });
+          setGameData({ gameInfo: game, awayForm, homeForm, injuries, awayRoster, homeRoster, h2h, mlbEdgeData, pitchingData, nbaEdgeData, nbaLineupData, nbaDefenseEdge, nbaDefenseTable });
         }
       } catch (e) {
         console.error(e);
@@ -146,6 +149,7 @@ function GameDetailScreen({ game, onBack }) {
             {tab === 'form' && <FormTab gameData={gameData} />}
             {tab === 'roster' && <RosterTab gameData={gameData} />}
             {tab === 'lineups' && <NbaLineupTab gameData={gameData} />}
+            {tab === 'def-vs-pos' && <NbaDefenseVsPositionTab gameData={gameData} />}
             {tab === 'edges' && (game.sportKey === 'nba' ? <NbaEdgeFinderTab gameData={gameData} /> : <EdgeFinderTab gameData={gameData} />)}
             {tab === 'pitching' && <PitchingEdgeTab gameData={gameData} />}
             {tab === 'ai' && <AIPlaysTab gameData={gameData} />}

@@ -511,4 +511,78 @@ async function buildNbaLineupData(gameInfo, awayRoster, homeRoster, options = {}
   };
 }
 
-Object.assign(window, { fetchNbaPlayerGameLog, fetchNbaStartingLineup, buildNbaEdgeData, buildNbaLineupData });
+/* ============================================================
+   NBA POSITIONAL DEFENSE EDGE
+   Pulls the Top-50 / Mid-50 / Bottom-50 defensive ranks for
+   tonight's matchup so the Lineups tab can show a colored chip
+   under each starter (rank 1-50 = green / 51-100 = yellow /
+   101-150 = red).
+   ============================================================ */
+
+async function fetchNbaPositionalDefenseEdge(gameInfo, options = {}) {
+  if (gameInfo?.sportKey !== 'nba') return null;
+  const { awayAbbr, homeAbbr } = gameInfo;
+  if (!awayAbbr || !homeAbbr) return null;
+  try {
+    const refreshParam = options.refresh ? '&refresh=1' : '';
+    const r = await fetch(
+      `${API_BASE}/api/nba/edge-finder/positional-points`
+      + `?away=${encodeURIComponent(awayAbbr)}`
+      + `&home=${encodeURIComponent(homeAbbr)}${refreshParam}`
+    );
+    if (!r.ok) return null;
+    return await r.json();
+  } catch (_) {
+    return null;
+  }
+}
+
+// Lookup helper: given a player name + their position + opponent abbr,
+// pull their entry from the defense-edge response.
+function findNbaDefenseEdge(edgeData, playerName, side) {
+  if (!edgeData || !side) return null;
+  const list = edgeData[side]?.players || [];
+  const norm = s => String(s || '').toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
+  const target = norm(playerName);
+  // Exact normalized match first; then last-name fallback
+  const exact = list.find(p => norm(p.player) === target);
+  if (exact) return exact;
+  const lastName = target.split(' ').slice(-1)[0];
+  if (!lastName) return null;
+  const byLast = list.filter(p => norm(p.player).split(' ').slice(-1)[0] === lastName);
+  return byLast.length === 1 ? byLast[0] : null;
+}
+
+// Top 50 = green, Middle 50 = yellow, Bottom 50 = red
+function nbaDefenseRankColor(rank) {
+  if (rank == null) return null;
+  if (rank <= 50) return 'green';
+  if (rank <= 100) return 'yellow';
+  return 'red';
+}
+
+// Pulls the full 150-row Defense vs Position table for a season.
+// Cached on the backend (24h TTL); cheap to refetch.
+async function fetchNbaDefenseVsPositionTable(options = {}) {
+  try {
+    const refreshParam = options.refresh ? '?refresh=1' : '';
+    const r = await fetch(`${API_BASE}/api/nba/positional-defense-points${refreshParam}`);
+    if (!r.ok) return null;
+    return await r.json();
+  } catch (_) {
+    return null;
+  }
+}
+
+Object.assign(window, {
+  fetchNbaPlayerGameLog,
+  fetchNbaStartingLineup,
+  fetchNbaPositionalDefenseEdge,
+  fetchNbaDefenseVsPositionTable,
+  findNbaDefenseEdge,
+  nbaDefenseRankColor,
+  buildNbaEdgeData,
+  buildNbaLineupData,
+});
