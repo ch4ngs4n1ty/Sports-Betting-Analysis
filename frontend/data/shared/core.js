@@ -4,11 +4,16 @@
    ============================================================ */
 
 // Backend URL resolution order (so the same build works locally + deployed):
-//   1. window.PIQ_API_BASE (set in index.html before scripts load)
-//   2. <meta name="piq-api-base" content="…">
-//   3. localhost fallback for local development
+//   1. window.PIQ_API_BASE override
+//   2. localhost shortcut: if the page is served from localhost / 127.0.0.1 /
+//      file://, use http://localhost:3001 — keeps dev fast even when the meta
+//      tag is set to a public URL for production
+//   3. <meta name="piq-api-base" content="https://…onrender.com">
+//   4. localhost fallback (last resort)
 const API_BASE = (() => {
   if (typeof window !== 'undefined' && window.PIQ_API_BASE) return window.PIQ_API_BASE;
+  const host = typeof window !== 'undefined' ? window.location.hostname : '';
+  if (!host || host === 'localhost' || host === '127.0.0.1') return 'http://localhost:3001';
   if (typeof document !== 'undefined') {
     const meta = document.querySelector('meta[name="piq-api-base"]');
     if (meta?.content) return meta.content;

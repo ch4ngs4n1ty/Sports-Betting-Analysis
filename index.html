@@ -14,10 +14,11 @@
   <meta name="apple-mobile-web-app-title" content="PlayIQ" />
   <link rel="apple-touch-icon" href="icon.svg" />
 
-  <!-- Backend API base. Local dev: http://localhost:3001. After deploying to
-       Render/Fly/etc., update this to your deployed URL — frontend reads it
-       at runtime so no rebuild is needed. -->
-  <meta name="piq-api-base" content="http://localhost:3001" />
+  <!-- Production backend URL. The data layer auto-detects local dev (when
+       the page is served from localhost/127.0.0.1/file://) and uses
+       http://localhost:3001 instead, so this can stay set to the deployed
+       URL permanently — no need to flip it back and forth. -->
+  <meta name="piq-api-base" content="https://playiq-backend-883n.onrender.com" />
 
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
@@ -250,7 +251,7 @@ function App() {
         <div className="nav-sep" />
         <div className="nav-status">
           <div className="nav-dot" />
-          <span>{(document.querySelector('meta[name="piq-api-base"]')?.content || 'localhost:3001').replace(/^https?:\/\//, '')}</span>
+          <span>{window.API_BASE || 'localhost:3001'}</span>
         </div>
       </nav>
 
