@@ -24,7 +24,9 @@ const {
 } = require('./nba/positional-defense');
 const { resolvePosition, getPositionMap } = require('./nba/positions');
 
-const PORT = 3001;
+// Render / Fly / etc. inject a PORT env var. Fall back to 3001 for local dev.
+const PORT = Number(process.env.PORT) || 3001;
+const HOST = process.env.HOST || '0.0.0.0';
 
 const server = http.createServer(async (req, res) => {
   // Handle CORS preflight
@@ -203,9 +205,9 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, () => {
+server.listen(PORT, HOST, () => {
   const now = new Date().toLocaleString('en-US', { timeZoneName: 'short' });
-  console.log(`[${now}] PlayIQ server running on http://localhost:${PORT}`);
+  console.log(`[${now}] PlayIQ server running on http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`);
 });
 
 // ── Keep alive — catch unhandled errors so server never crashes ──

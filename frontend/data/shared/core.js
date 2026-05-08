@@ -3,7 +3,18 @@
    Cross-sport APIs, shared fetchers, and AI helpers
    ============================================================ */
 
-const API_BASE = 'http://localhost:3001';
+// Backend URL resolution order (so the same build works locally + deployed):
+//   1. window.PIQ_API_BASE (set in index.html before scripts load)
+//   2. <meta name="piq-api-base" content="…">
+//   3. localhost fallback for local development
+const API_BASE = (() => {
+  if (typeof window !== 'undefined' && window.PIQ_API_BASE) return window.PIQ_API_BASE;
+  if (typeof document !== 'undefined') {
+    const meta = document.querySelector('meta[name="piq-api-base"]');
+    if (meta?.content) return meta.content;
+  }
+  return 'http://localhost:3001';
+})();
 
 const SPORTS_CONFIG = [
   { key: 'mlb', sport: 'baseball', league: 'mlb', label: 'MLB' },

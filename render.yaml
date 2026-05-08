@@ -1,0 +1,33 @@
+# Render free-tier config for the PlayIQ backend.
+# Push this file alongside your code; Render will detect it and offer to
+# deploy the service in one click.
+#
+# Free tier behavior:
+#  - Server sleeps after ~15 minutes of inactivity
+#  - First request after sleep adds ~30s cold-start delay
+#  - No persistent disk: server/data/*.json must be committed to git so
+#    cold starts have warm aggregates instead of running the full crawl
+#
+# Deployment steps:
+#  1. Push this repo to GitHub.
+#  2. Go to https://render.com/ → New + → Blueprint
+#  3. Connect your GitHub repo. Render reads this render.yaml automatically.
+#  4. After the first deploy, copy the service URL (e.g.
+#     https://playiq-backend.onrender.com) and paste it into the
+#     <meta name="piq-api-base"> tag in index.html.
+#  5. Push the index.html change. GitHub Pages (or wherever the frontend
+#     is hosted) will redeploy and start hitting the public backend.
+
+services:
+  - type: web
+    name: playiq-backend
+    runtime: node
+    plan: free
+    rootDir: server
+    buildCommand: ""           # zero deps; nothing to install
+    startCommand: "node index.js"
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production

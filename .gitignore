@@ -1,0 +1,19 @@
+# Logs
+server/server.log
+*.log
+
+# OS / editor noise
+.DS_Store
+.idea/
+.vscode/
+
+# Dependencies (no npm install in this repo, but in case)
+node_modules/
+
+# Environment files (never commit secrets)
+.env
+.env.local
+.env.*.local
+
+# NOTE: server/data/*.json IS committed on purpose — Render free tier has no
+# persistent disk, so the bundled aggregates make cold starts fast.
