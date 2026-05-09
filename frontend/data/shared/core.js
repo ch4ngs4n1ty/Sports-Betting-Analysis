@@ -45,6 +45,19 @@ async function espnFetch(url) {
   }
 }
 
+// Wakes up a sleeping Render free-tier backend in the background so the user
+// doesn't pay the ~30s cold start when they actually click into a game.
+// Fire-and-forget — silent if it fails.
+let _prewarmFiredAt = 0;
+function prewarmBackend() {
+  // Throttle: re-warming within 60s is a no-op (server stays awake ~15min)
+  if (Date.now() - _prewarmFiredAt < 60_000) return;
+  _prewarmFiredAt = Date.now();
+  // Local dev → no-op (no Render to wake up)
+  if (API_BASE.startsWith('http://localhost') || API_BASE.startsWith('http://127.')) return;
+  fetch(`${API_BASE}/api/health`, { cache: 'no-store' }).catch(() => {});
+}
+
 function getSeasonYear(sportKey) {
   const now = new Date();
   const year = now.getFullYear();
@@ -386,4 +399,5 @@ Object.assign(window, {
   fetchAllGames, fetchTeamForm, enrichFormWithPlayerStats,
   fetchH2H, fetchInjuries, fetchRoster, fetchTeamStats,
   getApiKey, claudeComplete, CLAUDE_MODEL, generateAIPlays,
+  prewarmBackend,
 });

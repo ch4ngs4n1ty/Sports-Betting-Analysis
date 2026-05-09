@@ -46,6 +46,11 @@ function GameDetailScreen({ game, onBack }) {
     async function load() {
       setLoading(true);
       setStepIdx(0);
+
+      // ── Phase 1 (core data) ─────────────────────────────────────────────
+      // Block on the small fetches that the Overview / H2H / Last 5 / Rosters
+      // tabs need. As soon as these resolve, render the page so the user can
+      // start exploring while heavier extras load in the background.
       try {
         setStepIdx(1);
         const [awayFormRaw, homeFormRaw, injuries, awayRoster, homeRoster] = await Promise.all([
@@ -62,38 +67,62 @@ function GameDetailScreen({ game, onBack }) {
         ]);
         setStepIdx(3);
         const h2h = await fetchH2H(game);
+
+        if (cancelled) return;
+
+        // Render the page now — user can read Overview while extras load
+        const baseData = { gameInfo: game, awayForm, homeForm, injuries, awayRoster, homeRoster, h2h };
+        setGameData(baseData);
+        setLoading(false);
         setStepIdx(4);
 
-        let mlbEdgeData = null, pitchingData = null, nbaEdgeData = null, nbaLineupData = null, nbaDefenseEdge = null, nbaDefenseTable = null;
+        // ── Phase 2 (heavy extras, runs in background) ────────────────────
+        // Tabs that consume this data already render a "loading" empty state
+        // when their slice of gameData is null, so we don't block the page.
         if (game.sportKey === 'mlb') {
-          const starterData = await fetchMlbStarters(game);
-          const bvpData = await fetchGameBvp(game, starterData.lineups, starterData.pitchers);
-          mlbEdgeData = await buildMlbEdgeData(game, bvpData);
-          pitchingData = { pitchers: starterData.pitchers };
+          (async () => {
+            try {
+              const starterData = await fetchMlbStarters(game);
+              const bvpData = await fetchGameBvp(game, starterData.lineups, starterData.pitchers);
+              const mlbEdgeData = await buildMlbEdgeData(game, bvpData);
+              if (cancelled) return;
+              setGameData(prev => prev && { ...prev,
+                mlbEdgeData,
+                pitchingData: { pitchers: starterData.pitchers },
+              });
+            } catch (e) { console.error('MLB extras failed', e); }
+          })();
         } else if (game.sportKey === 'nba') {
-          [nbaEdgeData, nbaLineupData, nbaDefenseEdge, nbaDefenseTable] = await Promise.all([
-            buildNbaEdgeData(game),
-            buildNbaLineupData(game, awayRoster, homeRoster),
-            fetchNbaPositionalDefenseEdge(game),
-            fetchNbaDefenseVsPositionTable(),
-          ]);
+          // Three independent extras — fire them in parallel, but commit each
+          // to gameData as it lands so individual tabs unlock independently.
+          buildNbaEdgeData(game).then(nbaEdgeData => {
+            if (!cancelled) setGameData(prev => prev && { ...prev, nbaEdgeData });
+          }).catch(() => {});
+          buildNbaLineupData(game, awayRoster, homeRoster).then(nbaLineupData => {
+            if (!cancelled) setGameData(prev => prev && { ...prev, nbaLineupData });
+          }).catch(() => {});
+          fetchNbaPositionalDefenseEdge(game).then(nbaDefenseEdge => {
+            if (!cancelled) setGameData(prev => prev && { ...prev, nbaDefenseEdge });
+          }).catch(() => {});
+          fetchNbaDefenseVsPositionTable().then(nbaDefenseTable => {
+            if (!cancelled) setGameData(prev => prev && { ...prev, nbaDefenseTable });
+          }).catch(() => {});
         }
+        // Phase 2 step indicator hides when load() returns; any tab waiting
+        // on extras still shows its own subtle "loading" message.
         setStepIdx(5);
-
-        if (!cancelled) {
-          setGameData({ gameInfo: game, awayForm, homeForm, injuries, awayRoster, homeRoster, h2h, mlbEdgeData, pitchingData, nbaEdgeData, nbaLineupData, nbaDefenseEdge, nbaDefenseTable });
-        }
       } catch (e) {
         console.error(e);
+        if (!cancelled) setLoading(false);
       }
-      if (!cancelled) setLoading(false);
     }
     load();
     return () => { cancelled = true; };
   }, [game.eventId]);
 
-  const edgeLabel = game.sportKey === 'mlb' ? 'BvP ANALYSIS' : game.sportKey === 'nba' ? 'EDGE FINDER' : 'EXTRAS';
-  const steps = ['LOADING GAME', 'TEAM STATS', 'FORM + PLAYERS', 'HEAD-TO-HEAD', edgeLabel, 'COMPLETE'];
+  // Phase 1 (blocking) → Phase 2 (background extras). The loader hides after
+  // step 3 once core data is ready; extras unlock individual tabs as they land.
+  const steps = ['LOADING GAME', 'TEAM STATS', 'FORM + PLAYERS', 'HEAD-TO-HEAD'];
 
   return (
     <div style={{ maxWidth: 1100, margin: '0 auto', padding: '0 24px 40px' }}>

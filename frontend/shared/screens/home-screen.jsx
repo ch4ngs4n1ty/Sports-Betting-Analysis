@@ -4,6 +4,10 @@
    ============================================================ */
 
 function HomeScreen({ onSelectSport }) {
+  // Wake up the Render backend in the background while the user picks a sport.
+  // No-op locally; ~1 ping while sleeping is enough to start the cold start.
+  React.useEffect(() => { prewarmBackend(); }, []);
+
   const sports = [
     { key: 'mlb', label: 'MLB', full: 'Major League Baseball', active: true, season: 'Spring 2026' },
     { key: 'nba', label: 'NBA', full: 'National Basketball Association', active: true, season: 'Season 2025-26' },

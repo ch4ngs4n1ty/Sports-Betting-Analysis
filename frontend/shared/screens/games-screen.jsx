@@ -10,6 +10,8 @@ function GamesScreen({ onSelectGame, onBack }) {
   const [filter, setFilter] = React.useState('all');
 
   React.useEffect(() => {
+    // Mirror prewarm here in case the user lands on Games via deep link.
+    prewarmBackend();
     setLoading(true);
     fetchAllGames(date).then(g => { setGames(g); setLoading(false); });
   }, [date]);
