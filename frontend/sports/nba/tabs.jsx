@@ -20,7 +20,10 @@ function NbaEdgeFinderTab({ gameData }) {
   const { gameInfo, nbaEdgeData } = gameData;
   const [filter, setFilter] = React.useState('all');
 
-  if (!nbaEdgeData) return <div style={emptyMsg}>NBA edge data loading or unavailable.</div>;
+  if (!nbaEdgeData) {
+    if (gameData?._loading?.nbaEdgeData !== false) return <TabLoader source="ESPN" label="Building player edge profiles..." rows={5} />;
+    return <div style={emptyMsg}>No edge data available.</div>;
+  }
   const { players } = nbaEdgeData;
   if (!players?.length) return <div style={emptyMsg}>No players found.</div>;
 
@@ -581,7 +584,8 @@ function NbaLineupTab({ gameData }) {
   }, [data?.lineupStatus?.away, data?.lineupStatus?.home, refresh]);
 
   if (!data) {
-    return <div style={emptyMsg}>Lineup data loading or unavailable.</div>;
+    if (gameData?._loading?.nbaLineupData !== false) return <TabLoader source="Rotowire" label="Confirming starting lineups..." rows={5} />;
+    return <div style={emptyMsg}>Lineup data unavailable.</div>;
   }
 
   const awayColor = '#00d4ff';
@@ -666,7 +670,8 @@ function NbaDefenseVsPositionTab({ gameData }) {
   const [sortDir, setSortDir] = React.useState('asc'); // 'asc' = stronger D first
 
   if (!nbaDefenseTable) {
-    return <div style={emptyMsg}>Defense vs Position table loading or unavailable.</div>;
+    if (gameData?._loading?.nbaDefenseTable !== false) return <TabLoader source="NBA" label="Loading 150 team-position rankings..." rows={4} />;
+    return <div style={emptyMsg}>Defense vs Position data unavailable.</div>;
   }
 
   // Filter rows depending on scope

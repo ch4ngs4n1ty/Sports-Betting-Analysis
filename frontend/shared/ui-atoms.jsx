@@ -413,8 +413,52 @@ function GameLogChart({ games, stats, defaultStat, emptyLabel = 'NO GAMES', acce
   );
 }
 
+/* ── Tab-level loader (Phase 2 lazy data) ─────────────── */
+function TabLoader({ source, label, rows = 4 }) {
+  const SRC_LABELS = {
+    rotowire: 'ROTOWIRE', savant: 'BASEBALL SAVANT', espn: 'ESPN',
+    stats: 'MLB STATS API', backend: 'ANALYTICS ENGINE', nba: 'NBA DATA',
+  };
+  const src = SRC_LABELS[(source || '').toLowerCase()] || (source || 'DATA SOURCE').toUpperCase();
+  return (
+    <div style={{ padding: '28px 0', animation: 'fadeUp 0.3s ease' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 22 }}>
+        <svg width="26" height="26" viewBox="0 0 40 40" style={{ flexShrink: 0 }}>
+          <circle cx="20" cy="20" r="15" fill="none" stroke="rgba(0,212,255,0.12)" strokeWidth="2.5" />
+          <circle cx="20" cy="20" r="15" fill="none" stroke="var(--cyan)" strokeWidth="2.5"
+            strokeDasharray="38 56" strokeLinecap="round">
+            <animateTransform attributeName="transform" type="rotate" from="0 20 20" to="360 20 20" dur="0.85s" repeatCount="indefinite" />
+          </circle>
+        </svg>
+        <div>
+          <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 9, color: 'var(--cyan)', letterSpacing: '0.22em', marginBottom: 3 }}>
+            FETCHING FROM {src}
+          </div>
+          {label && (
+            <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 9, color: 'var(--dim)', letterSpacing: '0.1em' }}>{label}</div>
+          )}
+        </div>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {Array.from({ length: rows }).map((_, i) => (
+          <div key={i} style={{ height: 52, background: 'var(--card)', borderRadius: 2, position: 'relative', overflow: 'hidden',
+            animation: `skeletonPulse 1.6s ease-in-out ${i * 0.12}s infinite` }}>
+            <div style={{ position: 'absolute', top: 0, left: '-100%', width: '55%', height: '100%',
+              background: 'linear-gradient(90deg, transparent, rgba(0,212,255,0.055), transparent)',
+              animation: `shimmer 1.9s ease-in-out ${i * 0.18}s infinite` }} />
+            <div style={{ position: 'absolute', top: 16, left: 18, height: 8, width: `${30 + (i % 3) * 15}%`,
+              background: 'rgba(255,255,255,0.04)', borderRadius: 2 }} />
+            <div style={{ position: 'absolute', top: 30, left: 18, height: 6, width: `${20 + (i % 2) * 10}%`,
+              background: 'rgba(255,255,255,0.025)', borderRadius: 2 }} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 Object.assign(window, {
   HudCard, StatusBadge, Loader, StatBar, Sparkline, OpsGauge,
   PlayerCard, SvgBarChart, DualStatBar, WeatherPill, SectionHeader,
-  OddsStrip, FormDots, GameLogChart,
+  OddsStrip, FormDots, GameLogChart, TabLoader,
 });

@@ -41,7 +41,10 @@ function EdgeFinderTab({ gameData }) {
   const { mlbEdgeData } = gameData;
   const [filter, setFilter] = React.useState('all');
 
-  if (!mlbEdgeData) return <div style={emptyMsg}>Edge data loading or unavailable.</div>;
+  if (!mlbEdgeData) {
+    if (gameData?._loading?.mlbEdgeData !== false) return <TabLoader source="Savant" label="Fetching BvP from Baseball Savant..." rows={5} />;
+    return <div style={emptyMsg}>Edge data unavailable — lineups may not be posted yet.</div>;
+  }
 
   const { batters, bvpStatus } = mlbEdgeData;
   const displayed = filter === 'edges' ? batters.filter(b => b.edgeStats && b.bvp?.ops >= 0.700) : batters;
@@ -159,7 +162,10 @@ function EdgeFinderTab({ gameData }) {
 
 function PitchingEdgeTab({ gameData }) {
   const { gameInfo, pitchingData } = gameData;
-  if (!pitchingData) return <div style={emptyMsg}>Pitching data loading or unavailable.</div>;
+  if (!pitchingData) {
+    if (gameData?._loading?.pitchingData !== false) return <TabLoader source="Stats" label="Loading probable pitchers..." rows={2} />;
+    return <div style={emptyMsg}>Pitching data unavailable.</div>;
+  }
   const { pitchers } = pitchingData;
   const fv = (v, d = 2) => v != null ? Number(v).toFixed(d) : '—';
 

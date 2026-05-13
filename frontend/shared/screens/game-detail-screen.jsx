@@ -71,14 +71,19 @@ function GameDetailScreen({ game, onBack }) {
         if (cancelled) return;
 
         // Render the page now — user can read Overview while extras load
-        const baseData = { gameInfo: game, awayForm, homeForm, injuries, awayRoster, homeRoster, h2h };
+        const initLoading = game.sportKey === 'mlb'
+          ? { mlbEdgeData: true, pitchingData: true }
+          : game.sportKey === 'nba'
+          ? { nbaEdgeData: true, nbaLineupData: true, nbaDefenseEdge: true, nbaDefenseTable: true }
+          : {};
+        const baseData = { gameInfo: game, awayForm, homeForm, injuries, awayRoster, homeRoster, h2h, _loading: initLoading };
         setGameData(baseData);
         setLoading(false);
         setStepIdx(4);
 
         // ── Phase 2 (heavy extras, runs in background) ────────────────────
-        // Tabs that consume this data already render a "loading" empty state
-        // when their slice of gameData is null, so we don't block the page.
+        // _loading flags let tabs show animated skeletons instead of static
+        // "unavailable" text while their slice of data is still in-flight.
         if (game.sportKey === 'mlb') {
           (async () => {
             try {
@@ -89,24 +94,36 @@ function GameDetailScreen({ game, onBack }) {
               setGameData(prev => prev && { ...prev,
                 mlbEdgeData,
                 pitchingData: { pitchers: starterData.pitchers },
+                _loading: { ...prev._loading, mlbEdgeData: false, pitchingData: false },
               });
-            } catch (e) { console.error('MLB extras failed', e); }
+            } catch (e) {
+              console.error('MLB extras failed', e);
+              if (!cancelled) setGameData(prev => prev && { ...prev, _loading: { ...prev._loading, mlbEdgeData: false, pitchingData: false } });
+            }
           })();
         } else if (game.sportKey === 'nba') {
           // Three independent extras — fire them in parallel, but commit each
           // to gameData as it lands so individual tabs unlock independently.
           buildNbaEdgeData(game).then(nbaEdgeData => {
-            if (!cancelled) setGameData(prev => prev && { ...prev, nbaEdgeData });
-          }).catch(() => {});
+            if (!cancelled) setGameData(prev => prev && { ...prev, nbaEdgeData, _loading: { ...prev._loading, nbaEdgeData: false } });
+          }).catch(() => {
+            if (!cancelled) setGameData(prev => prev && { ...prev, _loading: { ...prev._loading, nbaEdgeData: false } });
+          });
           buildNbaLineupData(game, awayRoster, homeRoster).then(nbaLineupData => {
-            if (!cancelled) setGameData(prev => prev && { ...prev, nbaLineupData });
-          }).catch(() => {});
+            if (!cancelled) setGameData(prev => prev && { ...prev, nbaLineupData, _loading: { ...prev._loading, nbaLineupData: false } });
+          }).catch(() => {
+            if (!cancelled) setGameData(prev => prev && { ...prev, _loading: { ...prev._loading, nbaLineupData: false } });
+          });
           fetchNbaPositionalDefenseEdge(game).then(nbaDefenseEdge => {
-            if (!cancelled) setGameData(prev => prev && { ...prev, nbaDefenseEdge });
-          }).catch(() => {});
+            if (!cancelled) setGameData(prev => prev && { ...prev, nbaDefenseEdge, _loading: { ...prev._loading, nbaDefenseEdge: false } });
+          }).catch(() => {
+            if (!cancelled) setGameData(prev => prev && { ...prev, _loading: { ...prev._loading, nbaDefenseEdge: false } });
+          });
           fetchNbaDefenseVsPositionTable().then(nbaDefenseTable => {
-            if (!cancelled) setGameData(prev => prev && { ...prev, nbaDefenseTable });
-          }).catch(() => {});
+            if (!cancelled) setGameData(prev => prev && { ...prev, nbaDefenseTable, _loading: { ...prev._loading, nbaDefenseTable: false } });
+          }).catch(() => {
+            if (!cancelled) setGameData(prev => prev && { ...prev, _loading: { ...prev._loading, nbaDefenseTable: false } });
+          });
         }
         // Phase 2 step indicator hides when load() returns; any tab waiting
         // on extras still shows its own subtle "loading" message.
