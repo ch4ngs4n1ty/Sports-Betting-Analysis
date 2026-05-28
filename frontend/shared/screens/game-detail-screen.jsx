@@ -10,6 +10,7 @@ const TABS_MLB = [
   { id: 'roster', label: 'ROSTERS' },
   { id: 'edges', label: 'EDGE FINDER' },
   { id: 'pitching', label: 'PITCHING' },
+  { id: 'highcontact', label: 'HIGH CONTACT' },
   { id: 'ai', label: '◆ AI PLAYS' },
 ];
 
@@ -72,7 +73,7 @@ function GameDetailScreen({ game, onBack }) {
 
         // Render the page now — user can read Overview while extras load
         const initLoading = game.sportKey === 'mlb'
-          ? { mlbEdgeData: true, pitchingData: true }
+          ? { mlbEdgeData: true, pitchingData: true, highContactData: true }
           : game.sportKey === 'nba'
           ? { nbaEdgeData: true, nbaLineupData: true, nbaDefenseEdge: true, nbaDefenseTable: true }
           : {};
@@ -88,17 +89,22 @@ function GameDetailScreen({ game, onBack }) {
           (async () => {
             try {
               const starterData = await fetchMlbStarters(game);
-              const bvpData = await fetchGameBvp(game, starterData.lineups, starterData.pitchers);
+              // BvP and high-contact share lineup/pitcher inputs; fire in parallel.
+              const [bvpData, highContactData] = await Promise.all([
+                fetchGameBvp(game, starterData.lineups, starterData.pitchers),
+                fetchHighContactReport(game, starterData.lineups, starterData.pitchers),
+              ]);
               const mlbEdgeData = await buildMlbEdgeData(game, bvpData);
               if (cancelled) return;
               setGameData(prev => prev && { ...prev,
                 mlbEdgeData,
                 pitchingData: { pitchers: starterData.pitchers },
-                _loading: { ...prev._loading, mlbEdgeData: false, pitchingData: false },
+                highContactData,
+                _loading: { ...prev._loading, mlbEdgeData: false, pitchingData: false, highContactData: false },
               });
             } catch (e) {
               console.error('MLB extras failed', e);
-              if (!cancelled) setGameData(prev => prev && { ...prev, _loading: { ...prev._loading, mlbEdgeData: false, pitchingData: false } });
+              if (!cancelled) setGameData(prev => prev && { ...prev, _loading: { ...prev._loading, mlbEdgeData: false, pitchingData: false, highContactData: false } });
             }
           })();
         } else if (game.sportKey === 'nba') {
@@ -198,6 +204,7 @@ function GameDetailScreen({ game, onBack }) {
             {tab === 'def-vs-pos' && <NbaDefenseVsPositionTab gameData={gameData} />}
             {tab === 'edges' && (game.sportKey === 'nba' ? <NbaEdgeFinderTab gameData={gameData} /> : <EdgeFinderTab gameData={gameData} />)}
             {tab === 'pitching' && <PitchingEdgeTab gameData={gameData} />}
+            {tab === 'highcontact' && <HighContactTab gameData={gameData} />}
             {tab === 'ai' && <AIPlaysTab gameData={gameData} />}
           </div>
         </>

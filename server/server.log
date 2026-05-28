@@ -138,3 +138,13 @@
 [5/10/2026, 11:37:56 AM EDT] PlayIQ server running on http://localhost:3001
 [5/12/2026, 2:17:56 AM EDT] PlayIQ server running on http://localhost:3001
 [nba/positional-defense] season=2025-26 reuse=true processed=1297 new=0
+[5/13/2026, 11:27:36 AM EDT] PlayIQ server running on http://localhost:3001
+[5/13/2026, 8:09:34 PM EDT] PlayIQ server running on http://localhost:3001
+[UNCAUGHT] listen EADDRINUSE: address already in use 0.0.0.0:3001
+[5/13/2026, 8:11:14 PM EDT] PlayIQ server running on http://localhost:3001
+[UNCAUGHT] listen EADDRINUSE: address already in use 0.0.0.0:3001
+[5/14/2026, 5:28:08 AM EDT] PlayIQ server running on http://localhost:3001
+[5/16/2026, 5:55:24 PM CDT] PlayIQ server running on http://localhost:3001
+[5/24/2026, 6:49:17 PM MDT] PlayIQ server running on http://localhost:3001
+[5/24/2026, 11:26:17 PM MDT] PlayIQ server running on http://localhost:3001
+[nba/positional-defense] season=2025-26 reuse=true processed=1297 new=0

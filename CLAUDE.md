@@ -10,20 +10,36 @@ It is a **full-stack app** with a vanilla-JS Node backend and a React-via-CDN br
 ## File Structure
 ```
 playiq/
-├── index.html         — Shell: React + Babel CDN, nav, API-key input, global CSS
-├── data-layer.js      — Plain JS: ESPN fetch helpers, backend calls, Claude API
-├── ui-atoms.jsx       — Primitive UI components (HudCard, PlayerCard, Sparkline, OpsGauge, etc.)
-├── tabs.jsx           — Game-detail tab implementations (Overview, H2H, Form, Roster, EdgeFinder, Pitching, AIPlays)
-├── screens-v2.jsx     — Top-level screens (HomeScreen, GamesScreen, GameDetailScreen)
-├── manifest.json      — PWA manifest
-├── icon.svg           — PWA icon
+├── index.html                                  — Shell: React + Babel CDN, nav, API-key input, global CSS
+├── frontend/
+│   ├── data/
+│   │   ├── shared/core.js                      — ESPN helpers, SPORTS_CONFIG, fetchAllGames, fetchTeamForm, fetchH2H, fetchInjuries, fetchRoster, Claude API, AI plays
+│   │   ├── mlb/index.js                        — MLB-only helpers: fetchGameBvp, fetchHighContactReport, fetchWeather, fetchMlbStarters, fetchPlayerGameLog, buildMlbEdgeData
+│   │   └── nba/index.js                        — NBA-only helpers: fetchNbaPlayerGameLog, buildNbaEdgeData, lineup + positional-defense fetchers
+│   ├── shared/
+│   │   ├── ui-atoms.jsx                        — Primitive UI components (HudCard, PlayerCard, Sparkline, OpsGauge, WeatherPill, TabLoader, etc.)
+│   │   ├── tabs/common-tabs.jsx                — Sport-agnostic tabs: OverviewTab, H2HTab, FormTab, RosterTab, AIPlaysTab
+│   │   └── screens/
+│   │       ├── home-screen.jsx                 — HomeScreen (sport picker)
+│   │       ├── games-screen.jsx                — GamesScreen (today's games)
+│   │       └── game-detail-screen.jsx          — GameDetailScreen + TABS_MLB / TABS_NBA / TABS_OTHER + Phase 1 / Phase 2 loading
+│   └── sports/
+│       ├── mlb/tabs.jsx                        — MLB-specific tabs: EdgeFinderTab, PitchingEdgeTab, HighContactTab
+│       └── nba/tabs.jsx                        — NBA-specific tabs: NbaEdgeFinderTab, NbaLineupTab, NbaDefenseVsPositionTab
+├── manifest.json                               — PWA manifest
+├── icon.svg                                    — PWA icon
 ├── server/
-│   ├── index.js       — Node HTTP server (port 3001): MLB Stats API + Baseball Savant BvP + weather
+│   ├── index.js                                — Node HTTP server (port 3001): routes to mlb/ and nba/ services
+│   ├── shared/{cache.js,http.js}               — In-memory cache + fetch helpers
+│   ├── mlb/service.js                          — MLB Stats API + Baseball Savant: games, lineups, BvP, weather, high-contact report (pitcher stats + arsenal + splits + bullpen + scoring)
+│   ├── nba/{service.js,positional-defense.js,positions.js}  — NBA endpoints (lineups, def-vs-position)
 │   ├── package.json
-│   ├── start.sh       — Kills any existing :3001 process, starts server in background, logs to server.log
+│   ├── start.sh                                — Kills any existing :3001 process, starts server in background, logs to server.log
 │   └── server.log
-└── CLAUDE.md          — This file
+└── CLAUDE.md                                   — This file
 ```
+
+**IMPORTANT** — `data-layer.js`, `tabs.jsx`, `screens-v2.jsx`, `ui-atoms.jsx` in the repo root are dead legacy files NOT loaded by `index.html` (leftovers from before the `frontend/` reorg). Always edit the `frontend/` paths above; editing the root files will compile fine but nothing will change in the browser.
 
 ---
 

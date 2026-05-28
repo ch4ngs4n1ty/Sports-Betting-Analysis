@@ -205,4 +205,258 @@ function PitchingEdgeTab({ gameData }) {
   );
 }
 
-Object.assign(window, { EdgeFinderTab, PitchingEdgeTab });
+/* ── HIGH CONTACT TAB ────────────────────────────────────
+   Visualizes the hit-risk report from /api/mlb/high-contact: a 0–100 risk
+   score per starting pitcher, weighted breakdown of 6 sub-signals (pitcher
+   traffic, pitch-type weakness, opp-vs-hand, lineup strength, weather,
+   BvP), current-vs-prev pitcher numbers, Savant arsenal table, opposing
+   team-vs-hand splits, bullpen, weather, and a verified-data row. */
+function HighContactTab({ gameData }) {
+  const { gameInfo, highContactData } = gameData;
+  if (!highContactData) {
+    if (gameData?._loading?.highContactData !== false) return <TabLoader source="MLB Stats + Savant" label="Computing hit-risk..." rows={2} />;
+    return <div style={emptyMsg}>High-contact report unavailable.</div>;
+  }
+
+  const SUB_LABELS = {
+    pitcherTraffic: 'PITCHER TRAFFIC',
+    pitchType:      'PITCH-TYPE WEAKNESS',
+    oppVsHand:      'OPP vs HAND',
+    lineupStrength: 'LINEUP STRENGTH',
+    weather:        'WEATHER',
+    bvp:            'BvP',
+  };
+  const SUB_ORDER = ['pitcherTraffic', 'pitchType', 'oppVsHand', 'lineupStrength', 'weather', 'bvp'];
+
+  const riskColor = score =>
+    score == null ? 'var(--dim)' :
+    score >= 65   ? '#ff6b35' :
+    score >= 40   ? '#ffd060' :
+                    '#00ff88';
+
+  const angleFor = side => {
+    if (side?.riskScore == null) return 'INSUFFICIENT DATA — wait for confirmed lineup + arsenal.';
+    if (side.riskScore >= 65) return `LEAN HITTERS — over team total / first-5 over / opposing batter hits ${side.opponent || ''}.`;
+    if (side.riskScore >= 40) return 'MIXED — single-batter props only, fade NRFI / look at HR props.';
+    return 'LEAN PITCHER — under team total / pitcher K props / under hits-allowed.';
+  };
+
+  const PitcherRiskCard = ({ side, color, abbr }) => {
+    if (!side?.pitcher) {
+      return (
+        <HudCard style={{ padding: 18, textAlign: 'center' }} accent="var(--dim)">
+          <div style={{ color: 'var(--dim)', fontFamily: 'Space Mono, monospace', fontSize: 10 }}>SP NOT ANNOUNCED</div>
+        </HudCard>
+      );
+    }
+    const score = side.riskScore;
+    const rc = riskColor(score);
+    const subs = side.subscores || {};
+    const weights = side.weights || {};
+    const cur = side.stats?.current || {};
+    const prev = side.stats?.previous || {};
+
+    return (
+      <HudCard style={{ padding: 18 }} accent={color}>
+        <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start', marginBottom: 14 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 9, fontFamily: 'Space Mono, monospace', color, letterSpacing: '0.18em', marginBottom: 4 }}>
+              {abbr}{side.pitcher.throws ? ` · ${side.pitcher.throws}HP` : ''}
+            </div>
+            <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 16, fontWeight: 700, color: 'var(--text)', marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {side.pitcher.name}
+            </div>
+            <div style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'Space Mono, monospace' }}>vs {side.opponent || '—'}</div>
+          </div>
+          <div style={{ textAlign: 'center', flexShrink: 0 }}>
+            <RiskGauge score={score} color={rc} />
+            <div style={{ fontSize: 9, color: rc, fontFamily: 'Space Mono, monospace', fontWeight: 700, letterSpacing: '0.18em', marginTop: 4 }}>
+              {side.riskLevel || '—'} RISK
+            </div>
+          </div>
+        </div>
+
+        <div style={{ paddingTop: 12, borderTop: '1px solid rgba(255,255,255,0.04)', marginBottom: 12 }}>
+          <div style={{ fontSize: 9, color: 'var(--dim)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.18em', marginBottom: 8 }}>BREAKDOWN</div>
+          {SUB_ORDER.map(key => {
+            const raw = subs[key];
+            const w = weights[key] || 0;
+            const present = raw != null;
+            const subColor = present ? riskColor(raw) : 'var(--dim)';
+            return (
+              <div key={key} style={{ marginBottom: 6 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3 }}>
+                  <span style={{ fontSize: 9, color: 'var(--muted)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.1em' }}>
+                    {SUB_LABELS[key]} <span style={{ color: 'var(--dim)' }}>· {Math.round(w * 100)}%</span>
+                  </span>
+                  <span style={{ fontSize: 10, fontFamily: 'Space Mono, monospace', color: subColor, fontWeight: 700 }}>
+                    {present ? raw : '—'}
+                  </span>
+                </div>
+                <div style={{ height: 4, background: 'rgba(255,255,255,0.04)', borderRadius: 2, overflow: 'hidden' }}>
+                  <div style={{ height: '100%', width: `${present ? raw : 0}%`, background: subColor,
+                    boxShadow: present ? `0 0 6px ${subColor}66` : 'none', borderRadius: 2,
+                    transition: 'width 0.5s cubic-bezier(0.16,1,0.3,1)' }} />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div style={{ paddingTop: 12, borderTop: '1px solid rgba(255,255,255,0.04)', marginBottom: 12 }}>
+          <div style={{ fontSize: 9, color: 'var(--dim)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.18em', marginBottom: 8 }}>PITCHER · CURRENT vs PREV</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6 }}>
+            {[
+              ['ERA',   cur.era,    prev.era,    v => v != null ? Number(v).toFixed(2) : '—'],
+              ['WHIP',  cur.whip,   prev.whip,   v => v != null ? Number(v).toFixed(2) : '—'],
+              ['H/9',   cur.h9,     prev.h9,     v => v != null ? Number(v).toFixed(1) : '—'],
+              ['K/9',   cur.k9,     prev.k9,     v => v != null ? Number(v).toFixed(1) : '—'],
+              ['BB/9',  cur.bb9,    prev.bb9,    v => v != null ? Number(v).toFixed(1) : '—'],
+              ['oAVG',  cur.oppAvg, prev.oppAvg, v => v != null ? Number(v).toFixed(3) : '—'],
+              ['oOPS',  cur.oppOps, prev.oppOps, v => v != null ? Number(v).toFixed(3) : '—'],
+              ['HR/9',  cur.hrPer9, prev.hrPer9, v => v != null ? Number(v).toFixed(2) : '—'],
+            ].map(([l, c, p, fmt]) => (
+              <div key={l} style={{ padding: '7px 6px', background: 'var(--surface)', borderRadius: 3, textAlign: 'center' }}>
+                <div style={{ fontSize: 8, color: 'var(--dim)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.1em', marginBottom: 3 }}>{l}</div>
+                <div style={{ fontSize: 13, fontFamily: 'Orbitron, monospace', color, fontWeight: 700, lineHeight: 1 }}>{fmt(c)}</div>
+                <div style={{ fontSize: 8, fontFamily: 'Space Mono, monospace', color: 'var(--muted)', marginTop: 3 }}>prev: {fmt(p)}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {side.arsenal?.length > 0 && (
+          <div style={{ paddingTop: 12, borderTop: '1px solid rgba(255,255,255,0.04)', marginBottom: 12 }}>
+            <div style={{ fontSize: 9, color: 'var(--dim)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.18em', marginBottom: 8 }}>
+              ARSENAL · TOP {Math.min(side.arsenal.length, 5)} PITCHES
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {side.arsenal.slice(0, 5).map((p, i) => {
+                const xw = p.xwoba;
+                const xwColor = xw == null ? 'var(--dim)' :
+                                xw >= 0.380 ? '#ff6b35' :
+                                xw >= 0.330 ? '#ffd060' :
+                                xw >= 0.290 ? 'var(--cyan)' : '#00ff88';
+                return (
+                  <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 50px 75px 60px', gap: 8, alignItems: 'center', padding: '4px 6px', background: i === 0 ? 'rgba(255,255,255,0.02)' : 'transparent', borderRadius: 2 }}>
+                    <div style={{ fontSize: 10, fontFamily: 'Space Mono, monospace', color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</div>
+                    <div style={{ fontSize: 10, fontFamily: 'Space Mono, monospace', color: 'var(--muted)', textAlign: 'right' }}>{p.usage ? `${p.usage.toFixed(0)}%` : '—'}</div>
+                    <div style={{ fontSize: 10, fontFamily: 'Space Mono, monospace', color: xwColor, fontWeight: 700, textAlign: 'right' }}>
+                      xwOBA {xw != null ? xw.toFixed(3) : '—'}
+                    </div>
+                    <div style={{ fontSize: 9, fontFamily: 'Space Mono, monospace', color: 'var(--muted)', textAlign: 'right' }}>
+                      whiff {p.whiffPct != null ? `${p.whiffPct.toFixed(0)}%` : '—'}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {side.oppHandSplits && (
+          <div style={{ paddingTop: 12, borderTop: '1px solid rgba(255,255,255,0.04)', marginBottom: 12 }}>
+            <div style={{ fontSize: 9, color: 'var(--dim)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.18em', marginBottom: 8 }}>
+              {side.opponent ? side.opponent.toUpperCase() : 'OPP'} vs {side.pitcher.throws === 'L' ? 'LHP' : 'RHP'}
+            </div>
+            {(() => {
+              const sp = side.pitcher.throws === 'L' ? side.oppHandSplits.vsL : side.oppHandSplits.vsR;
+              if (!sp) return <div style={{ fontSize: 10, color: 'var(--dim)', fontFamily: 'Space Mono, monospace' }}>NO SPLIT DATA</div>;
+              return (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6 }}>
+                  {[['AVG', sp.avg], ['OBP', sp.obp], ['SLG', sp.slg], ['OPS', sp.ops]].map(([l, v]) => (
+                    <div key={l} style={{ padding: '6px 4px', textAlign: 'center', background: 'var(--surface)', borderRadius: 3 }}>
+                      <div style={{ fontSize: 8, color: 'var(--dim)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.1em', marginBottom: 2 }}>{l}</div>
+                      <div style={{ fontSize: 12, fontFamily: 'Orbitron, monospace', color: 'var(--text)', fontWeight: 700 }}>
+                        {v != null ? v.toFixed(3) : '—'}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
+          </div>
+        )}
+
+        <div style={{ paddingTop: 12, borderTop: '1px solid rgba(255,255,255,0.04)', display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center', marginBottom: 12 }}>
+          {side.bullpen ? (
+            <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+              <span style={{ fontSize: 9, color: 'var(--dim)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.15em' }}>BULLPEN</span>
+              <span style={{ fontSize: 11, fontFamily: 'Space Mono, monospace', color: 'var(--text)', fontWeight: 700 }}>
+                {side.bullpen.era != null ? side.bullpen.era.toFixed(2) : '—'} ERA
+              </span>
+              <span style={{ fontSize: 10, fontFamily: 'Space Mono, monospace', color: 'var(--muted)' }}>
+                {side.bullpen.whip != null ? side.bullpen.whip.toFixed(2) : '—'} WHIP
+              </span>
+            </div>
+          ) : (
+            <span style={{ fontSize: 10, color: 'var(--dim)', fontFamily: 'Space Mono, monospace' }}>BULLPEN —</span>
+          )}
+          {side.weather && <WeatherPill weather={side.weather} />}
+        </div>
+
+        <div style={{ padding: '10px 12px', background: `${rc}10`, border: `1px solid ${rc}33`, borderRadius: 3 }}>
+          <div style={{ fontSize: 8, color: rc, fontFamily: 'Space Mono, monospace', letterSpacing: '0.2em', marginBottom: 4 }}>ANGLE</div>
+          <div style={{ fontSize: 11, color: 'var(--text)', fontFamily: 'Space Mono, monospace', lineHeight: 1.5 }}>{angleFor(side)}</div>
+        </div>
+
+        <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid rgba(255,255,255,0.04)', display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+          {[
+            ['pitcherStats', 'STATS'],
+            ['prevSeasonStats', 'PREV'],
+            ['arsenal', 'ARSENAL'],
+            ['lineupPosted', 'LINEUP'],
+            ['oppHandSplits', 'SPLITS'],
+            ['bullpen', 'PEN'],
+            ['weather', 'WX'],
+            ['bvpSample', 'BvP'],
+          ].map(([key, lbl]) => {
+            const ok = side.verified?.[key];
+            return (
+              <span key={key} style={{ fontSize: 8, padding: '2px 6px', borderRadius: 2, fontFamily: 'Space Mono, monospace', letterSpacing: '0.1em',
+                color: ok ? '#00ff88' : 'var(--dim)',
+                background: ok ? 'rgba(0,255,136,0.08)' : 'transparent',
+                border: `1px solid ${ok ? 'rgba(0,255,136,0.25)' : 'rgba(255,255,255,0.05)'}` }}>
+                {ok ? '✓' : '○'} {lbl}
+              </span>
+            );
+          })}
+        </div>
+      </HudCard>
+    );
+  };
+
+  return (
+    <div style={{ padding: '20px 0' }}>
+      <SectionHeader
+        label="HIGH-CONTACT PITCHING"
+        sub="Weighted hit-risk score · WHIP + arsenal xwOBA + opp-vs-hand + lineup BvP + weather"
+      />
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))', gap: 12 }}>
+        <PitcherRiskCard side={highContactData.away} color="var(--cyan)" abbr={gameInfo.awayAbbr} />
+        <PitcherRiskCard side={highContactData.home} color="#ffd060" abbr={gameInfo.homeAbbr} />
+      </div>
+    </div>
+  );
+}
+
+function RiskGauge({ score, color, size = 90 }) {
+  const r = size * 0.40, cx = size / 2, cy = size / 2, sw = size * 0.085;
+  const pct = score == null ? 0 : Math.max(0, Math.min(score, 100)) / 100;
+  const circ = 2 * Math.PI * r;
+  return (
+    <svg width={size} height={size}>
+      <circle cx={cx} cy={cy} r={r} fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth={sw} />
+      <circle cx={cx} cy={cy} r={r} fill="none" stroke={color} strokeWidth={sw}
+        strokeDasharray={`${circ * pct} ${circ}`} strokeLinecap="round"
+        transform={`rotate(-90 ${cx} ${cy})`}
+        style={{ filter: `drop-shadow(0 0 6px ${color})`, transition: 'stroke-dasharray 0.9s cubic-bezier(0.16,1,0.3,1)' }} />
+      <text x={cx} y={cy + size * 0.06} textAnchor="middle" fill={color}
+        fontSize={size * 0.32} fontFamily="Orbitron, monospace" fontWeight="700">
+        {score != null ? score : '—'}
+      </text>
+    </svg>
+  );
+}
+
+Object.assign(window, { EdgeFinderTab, PitchingEdgeTab, HighContactTab });

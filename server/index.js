@@ -13,6 +13,7 @@ const {
   fetchGameWeather,
   findGamePkByAbbrDate,
   findGamePkByTeams,
+  getHighContactReport,
 } = require('./mlb/service');
 const {
   getNbaStartingLineups,
@@ -95,6 +96,35 @@ const server = http.createServer(async (req, res) => {
       const homePitcher = url.searchParams.get('homePitcher') || undefined;
       const result = await getGameBvp(gamePk, { refresh, awayLineup, homeLineup, awayPitcher, homePitcher });
       return sendJson(res, result);
+    }
+
+    // GET /api/mlb/high-contact?gamePk=... OR ?away=...&home=...&date=YYYY-MM-DD
+    //   Aggregated hit-risk report for both starting pitchers:
+    //   pitcher current/prev season stats + home/away/vs-hand splits,
+    //   Savant pitch arsenal, opposing-team vs RHP/LHP splits, bullpen
+    //   aggregate, weather, lineup BvP summary, and weighted risk score.
+    //   Add &refresh=1 to bypass cache.
+    if (path === '/api/mlb/high-contact') {
+      let gamePk = url.searchParams.get('gamePk');
+      if (!gamePk) {
+        const away = url.searchParams.get('away');
+        const home = url.searchParams.get('home');
+        const date = url.searchParams.get('date') || undefined;
+        if (!away || !home) return sendError(res, 'gamePk or away+home team names required');
+        gamePk = await findGamePkByTeams(away, home, date);
+        if (!gamePk) return sendError(res, `No game found for ${away} @ ${home}`, 404);
+      }
+      const refresh = url.searchParams.get('refresh') === '1';
+      const parseLineup = param => {
+        const v = url.searchParams.get(param);
+        return v ? v.split(',').map(s => s.trim()).filter(Boolean) : undefined;
+      };
+      const awayLineup = parseLineup('awayLineup');
+      const homeLineup = parseLineup('homeLineup');
+      const awayPitcher = url.searchParams.get('awayPitcher') || undefined;
+      const homePitcher = url.searchParams.get('homePitcher') || undefined;
+      const report = await getHighContactReport(gamePk, { refresh, awayLineup, homeLineup, awayPitcher, homePitcher });
+      return sendJson(res, report);
     }
 
     // GET /api/mlb/weather?date=YYYY-MM-DD&teamAbbr=ATL
