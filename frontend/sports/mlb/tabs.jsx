@@ -459,4 +459,288 @@ function RiskGauge({ score, color, size = 90 }) {
   );
 }
 
-Object.assign(window, { EdgeFinderTab, PitchingEdgeTab, HighContactTab });
+/* ── LOW HOME RUN MODEL TAB ──────────────────────────────
+   Visualizes /api/mlb/low-hr-model: Under-0.5-HR parlay candidates
+   scored on the 13-point blueprint (SP HR/9 rank, 0 HR BvP, no-HR
+   rate ≥94%, ISO, barrel%, SP ground-ball lean, park, wind, lineup
+   spot) with a park/weather strip, both starters' HR-suppression
+   profiles, a suggested 2-4 leg slip, and per-batter score cards. */
+function LowHrModelTab({ gameData }) {
+  const { gameInfo, lowHrData } = gameData;
+  const [filter, setFilter] = React.useState('all');
+
+  if (!lowHrData) {
+    if (gameData?._loading?.lowHrData !== false) return <TabLoader source="Savant" label="Scoring Under 0.5 HR candidates..." rows={5} />;
+    return <div style={emptyMsg}>Low HR model unavailable — lineups may not be posted yet.</div>;
+  }
+
+  const { park, weather, windFlag, pitchers, candidates = [], slip = [], leagueAvgHr9 } = lowHrData;
+
+  const ratingColor = r => r === 'STRONG' ? '#00ff88' : r === 'DECENT' ? '#ffd060' : '#ff6b35';
+  const sideColor = s => s === 'away' ? 'var(--cyan)' : '#ffd060';
+  const sideAbbr = s => s === 'away' ? gameInfo.awayAbbr : gameInfo.homeAbbr;
+  const fmtOdds = o => o == null ? '—' : o > 0 ? `+${o}` : String(o);
+
+  const counts = {
+    all: candidates.length,
+    strong: candidates.filter(c => c.rating === 'STRONG').length,
+    decent: candidates.filter(c => c.rating === 'DECENT').length,
+  };
+  const displayed = filter === 'all' ? candidates : candidates.filter(c => c.rating === filter.toUpperCase());
+
+  const windChip = {
+    OUT:     { color: '#ff6b35', label: '⚠ WIND OUT' },
+    IN:      { color: '#00ff88', label: '✓ WIND IN' },
+    DOME:    { color: 'var(--cyan)', label: '● DOME / ROOF CLOSED' },
+    NEUTRAL: { color: 'var(--muted)', label: '○ WIND NEUTRAL' },
+  }[windFlag] || { color: 'var(--dim)', label: '—' };
+
+  const parkColor = park?.classification === 'HR-SUPPRESSING' ? '#00ff88'
+    : park?.classification === 'HR-FRIENDLY' ? '#ff6b35'
+    : park?.classification === 'NEUTRAL' ? '#ffd060' : 'var(--dim)';
+  // Park factor bar: 80 (Oracle) → 0%, 125 (Great American) → 100%
+  const parkPct = park?.factor != null ? Math.max(0, Math.min(100, (park.factor - 80) / 45 * 100)) : 0;
+
+  const SpHrCard = ({ p, abbr, color, oppAbbr }) => {
+    if (!p) {
+      return (
+        <HudCard style={{ padding: 18, textAlign: 'center' }} accent="var(--dim)">
+          <div style={{ color: 'var(--dim)', fontFamily: 'Space Mono, monospace', fontSize: 10 }}>SP NOT ANNOUNCED</div>
+        </HudCard>
+      );
+    }
+    const hr9Color = p.hrPer9 == null ? 'var(--dim)' : p.hrPer9 <= 0.80 ? '#00ff88' : p.hrPer9 <= 1.10 ? '#ffd060' : '#ff6b35';
+    return (
+      <HudCard style={{ padding: 18 }} accent={color}>
+        <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start', marginBottom: 12 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 9, fontFamily: 'Space Mono, monospace', color, letterSpacing: '0.18em', marginBottom: 4 }}>
+              {abbr}{p.throws ? ` · ${p.throws}HP` : ''} · vs {oppAbbr} LINEUP
+            </div>
+            <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 15, fontWeight: 700, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {p.name}
+            </div>
+            <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
+              {p.top15 && (
+                <span style={{ fontSize: 9, padding: '2px 8px', background: 'rgba(0,255,136,0.12)', border: '1px solid rgba(0,255,136,0.35)', color: '#00ff88', fontFamily: 'Orbitron, monospace', fontWeight: 700, borderRadius: 2, letterSpacing: '0.12em' }}>
+                  ★ TOP-15 LOW HR/9
+                </span>
+              )}
+              {p.rank != null && (
+                <span style={{ fontSize: 9, padding: '2px 8px', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--muted)', fontFamily: 'Space Mono, monospace', borderRadius: 2 }}>
+                  RANK #{p.rank}/{p.totalRanked}
+                </span>
+              )}
+            </div>
+          </div>
+          <div style={{ textAlign: 'center', flexShrink: 0 }}>
+            <div style={{ fontSize: 8, color: 'var(--dim)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.16em', marginBottom: 2 }}>HR/9</div>
+            <div style={{ fontSize: 30, fontFamily: 'Orbitron, monospace', fontWeight: 900, color: hr9Color, lineHeight: 1 }}>
+              {p.hrPer9 != null ? p.hrPer9.toFixed(2) : '—'}
+            </div>
+            <div style={{ fontSize: 8, color: 'var(--muted)', fontFamily: 'Space Mono, monospace', marginTop: 3 }}>
+              lg avg {leagueAvgHr9 != null ? leagueAvgHr9.toFixed(2) : '—'}
+            </div>
+          </div>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6, paddingTop: 10, borderTop: '1px solid rgba(255,255,255,0.04)' }}>
+          {[
+            ['GO/AO', p.goAo != null ? p.goAo.toFixed(2) : '—', p.goAo != null && p.goAo >= 1.3 ? '#00ff88' : 'var(--text)'],
+            ['BRL% ALW', p.barrelPctAllowed != null ? `${p.barrelPctAllowed.toFixed(1)}%` : '—', p.barrelPctAllowed != null && p.barrelPctAllowed < 6 ? '#00ff88' : 'var(--text)'],
+            ['HH% ALW', p.hardHitPctAllowed != null ? `${p.hardHitPctAllowed.toFixed(1)}%` : '—', 'var(--text)'],
+            ['HR L3 GM', p.hrLast3 != null ? `${p.hrLast3}` : '—', p.hrLast3 != null && p.hrLast3 === 0 ? '#00ff88' : p.hrLast3 >= 3 ? '#ff6b35' : 'var(--text)'],
+          ].map(([l, v, c]) => (
+            <div key={l} style={{ textAlign: 'center', padding: '7px 4px', background: 'var(--surface)', borderRadius: 3 }}>
+              <div style={{ fontSize: 8, color: 'var(--dim)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.08em', marginBottom: 3 }}>{l}</div>
+              <div style={{ fontSize: 14, fontFamily: 'Orbitron, monospace', color: c, fontWeight: 700 }}>{v}</div>
+            </div>
+          ))}
+        </div>
+      </HudCard>
+    );
+  };
+
+  const CandidateCard = ({ c }) => {
+    const rc = ratingColor(c.rating);
+    const tc = sideColor(c.side);
+    const headshot = c.id
+      ? `https://img.mlbstatic.com/mlb-photos/image/upload/d_people:generic:headshot:67:current/w_426,q_auto:best/v1/people/${c.id}/headshot/67/current`
+      : null;
+    return (
+      <HudCard style={{ padding: '16px 18px' }} accent={rc}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+          <PlayerCard player={{ name: c.name, headshot, pos: c.position }} size="md" accent={tc} />
+          <div style={{ flex: 1, minWidth: 170 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 14, fontFamily: 'Space Mono, monospace', color: 'var(--text)', fontWeight: 700 }}>{c.name}</span>
+              <span style={{ fontSize: 9, padding: '2px 7px', border: `1px solid ${tc}66`, color: tc, fontFamily: 'Space Mono, monospace', borderRadius: 2, letterSpacing: '0.08em' }}>{sideAbbr(c.side)}</span>
+              {c.order && (
+                <span style={{ fontSize: 9, padding: '2px 7px', border: '1px solid rgba(255,255,255,0.1)', color: c.order >= 7 ? '#00ff88' : 'var(--muted)', fontFamily: 'Space Mono, monospace', borderRadius: 2 }}>
+                  BATS #{c.order}
+                </span>
+              )}
+            </div>
+            <div style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'Space Mono, monospace' }}>
+              vs {c.pitcher || 'TBD'}{c.pitcherThrows ? ` (${c.pitcherThrows}HP)` : ''}
+              {c.bvp ? ` · BvP ${c.bvp.hr} HR / ${c.bvp.pa} PA` : ' · no BvP history'}
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: 8, color: 'var(--dim)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.14em', marginBottom: 2 }}>MODEL NO-HR</div>
+              <div style={{ fontSize: 20, fontFamily: 'Orbitron, monospace', fontWeight: 700, color: rc }}>
+                {c.modelNoHrPct != null ? `${c.modelNoHrPct.toFixed(1)}%` : '—'}
+              </div>
+              <div style={{ fontSize: 8, color: 'var(--muted)', fontFamily: 'Space Mono, monospace', marginTop: 1 }}>fair {fmtOdds(c.fairOdds)}</div>
+            </div>
+            <div style={{ textAlign: 'center', padding: '6px 12px', background: `${rc}10`, border: `1px solid ${rc}33`, borderRadius: 3 }}>
+              <div style={{ fontSize: 22, fontFamily: 'Orbitron, monospace', fontWeight: 900, color: rc, lineHeight: 1 }}>
+                {c.score}<span style={{ fontSize: 11, color: 'var(--muted)' }}>/{c.maxScore}</span>
+              </div>
+              <div style={{ fontSize: 8, color: rc, fontFamily: 'Space Mono, monospace', letterSpacing: '0.16em', marginTop: 3, fontWeight: 700 }}>{c.rating}</div>
+            </div>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 12, paddingTop: 10, borderTop: '1px solid rgba(255,255,255,0.04)' }}>
+          {(c.breakdown || []).map(b => {
+            const full = b.pts >= b.max;
+            const partial = b.pts > 0 && b.pts < b.max;
+            const bc = full ? '#00ff88' : partial ? '#ffd060' : 'var(--dim)';
+            return (
+              <span key={b.key} title={b.detail} style={{ fontSize: 8, padding: '3px 7px', borderRadius: 2, fontFamily: 'Space Mono, monospace', letterSpacing: '0.06em', cursor: 'help',
+                color: bc,
+                background: b.pts > 0 ? `${full ? 'rgba(0,255,136,0.08)' : 'rgba(255,208,96,0.08)'}` : 'transparent',
+                border: `1px solid ${b.pts > 0 ? (full ? 'rgba(0,255,136,0.25)' : 'rgba(255,208,96,0.25)') : 'rgba(255,255,255,0.05)'}` }}>
+                {b.pts > 0 ? '✓' : '○'} +{b.pts} {b.label}
+              </span>
+            );
+          })}
+        </div>
+
+        <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginTop: 10, alignItems: 'center' }}>
+          {[
+            ['NO-HR RATE', c.season?.gameNoHrPct != null ? `${c.season.gameNoHrPct.toFixed(1)}%` : '—'],
+            ['ISO', c.season?.iso != null ? c.season.iso.toFixed(3) : '—'],
+            ['BRL%', c.statcast?.barrelPct != null ? `${c.statcast.barrelPct.toFixed(1)}%` : '—'],
+            ['SZN HR', c.season?.hr != null ? `${c.season.hr} in ${c.season.pa} PA` : '—'],
+            ['L15 HR', c.recent ? `${c.recent.hr15}` : '—'],
+          ].map(([l, v]) => (
+            <span key={l} style={{ fontSize: 9, fontFamily: 'Space Mono, monospace', color: 'var(--muted)' }}>
+              <span style={{ color: 'var(--dim)', letterSpacing: '0.1em' }}>{l}</span> <span style={{ color: 'var(--text)', fontWeight: 700 }}>{v}</span>
+            </span>
+          ))}
+          {(c.flags || []).map(f => (
+            <span key={f} style={{ fontSize: 8, padding: '2px 7px', borderRadius: 2, fontFamily: 'Space Mono, monospace', letterSpacing: '0.08em',
+              color: '#ff6b35', background: 'rgba(255,107,53,0.08)', border: '1px solid rgba(255,107,53,0.25)' }}>
+              ⚠ {f}
+            </span>
+          ))}
+        </div>
+      </HudCard>
+    );
+  };
+
+  return (
+    <div style={{ padding: '20px 0' }}>
+      <SectionHeader
+        label="LOW HOME RUN MODEL"
+        sub="Under 0.5 HR slip builder · SP HR/9 rank + BvP history + no-HR rate + park & wind · 13-pt score"
+      />
+
+      {/* Park + weather context strip */}
+      <HudCard style={{ padding: '14px 18px', marginBottom: 12 }} accent={parkColor}>
+        <div style={{ display: 'flex', gap: 18, alignItems: 'center', flexWrap: 'wrap' }}>
+          <div style={{ flex: 1, minWidth: 200 }}>
+            <div style={{ fontSize: 9, color: 'var(--dim)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.18em', marginBottom: 4 }}>BALLPARK</div>
+            <div style={{ fontSize: 13, fontFamily: 'Space Mono, monospace', color: 'var(--text)', fontWeight: 700, marginBottom: 6 }}>
+              {park?.venue || 'Unknown venue'}
+              {park?.roofType ? <span style={{ color: 'var(--muted)', fontWeight: 400 }}> · {park.roofType}</span> : null}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{ flex: 1, maxWidth: 220, height: 5, background: 'rgba(255,255,255,0.05)', borderRadius: 2, overflow: 'hidden' }}>
+                <div style={{ height: '100%', width: `${parkPct}%`, background: parkColor, boxShadow: `0 0 8px ${parkColor}88`, borderRadius: 2, transition: 'width 0.7s cubic-bezier(0.16,1,0.3,1)' }} />
+              </div>
+              <span style={{ fontSize: 12, fontFamily: 'Orbitron, monospace', color: parkColor, fontWeight: 700 }}>
+                {park?.factor != null ? park.factor : '—'}
+              </span>
+              <span style={{ fontSize: 9, padding: '2px 8px', border: `1px solid ${parkColor}44`, color: parkColor, fontFamily: 'Space Mono, monospace', borderRadius: 2, letterSpacing: '0.1em' }}>
+                {park?.classification || 'UNKNOWN'}
+              </span>
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 9, padding: '4px 10px', border: `1px solid ${windChip.color}44`, color: windChip.color, fontFamily: 'Space Mono, monospace', borderRadius: 2, letterSpacing: '0.1em', fontWeight: 700 }}>
+              {windChip.label}
+            </span>
+            {weather && <WeatherPill weather={weather} />}
+          </div>
+        </div>
+      </HudCard>
+
+      {/* Both starters' HR-suppression profile */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(330px, 1fr))', gap: 12, marginBottom: 12 }}>
+        <SpHrCard p={pitchers?.away} abbr={gameInfo.awayAbbr} color="var(--cyan)" oppAbbr={gameInfo.homeAbbr} />
+        <SpHrCard p={pitchers?.home} abbr={gameInfo.homeAbbr} color="#ffd060" oppAbbr={gameInfo.awayAbbr} />
+      </div>
+
+      {/* Suggested slip */}
+      <HudCard style={{ padding: '16px 18px', marginBottom: 16 }} accent={slip.length ? '#00ff88' : 'var(--dim)'}>
+        <div style={{ fontSize: 9, color: slip.length ? '#00ff88' : 'var(--dim)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.22em', marginBottom: 10 }}>
+          ◆ SUGGESTED SLIP — UNDER 0.5 HR PARLAY
+        </div>
+        {slip.length ? (
+          <>
+            {slip.map((s, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 10px', marginBottom: 4, background: 'rgba(255,255,255,0.02)', borderRadius: 3, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 13, fontFamily: 'Orbitron, monospace', fontWeight: 900, color: '#00ff88', width: 18 }}>{i + 1}</span>
+                <span style={{ fontSize: 12, fontFamily: 'Space Mono, monospace', color: 'var(--text)', fontWeight: 700, flex: 1, minWidth: 140 }}>
+                  {s.name} <span style={{ color: 'var(--muted)', fontWeight: 400 }}>UNDER 0.5 HR</span>
+                </span>
+                <span style={{ fontSize: 9, fontFamily: 'Space Mono, monospace', color: sideColor(s.side) }}>{sideAbbr(s.side)} · #{s.order || '—'}</span>
+                <span style={{ fontSize: 10, fontFamily: 'Orbitron, monospace', color: ratingColor(s.rating), fontWeight: 700 }}>{s.score}/{s.maxScore}</span>
+                <span style={{ fontSize: 10, fontFamily: 'Space Mono, monospace', color: 'var(--text)' }}>
+                  {s.modelNoHrPct != null ? `${s.modelNoHrPct.toFixed(1)}%` : '—'} <span style={{ color: 'var(--muted)' }}>fair {fmtOdds(s.fairOdds)}</span>
+                </span>
+              </div>
+            ))}
+            <div style={{ fontSize: 9, color: 'var(--muted)', fontFamily: 'Space Mono, monospace', marginTop: 8, lineHeight: 1.6 }}>
+              Only bet when model probability beats the book's implied probability — compare "fair" odds vs the listed price.
+              Parlay risk stacks: 2-3 legs preferred over 4.
+            </div>
+          </>
+        ) : (
+          <div style={{ fontSize: 10, color: 'var(--dim)', fontFamily: 'Space Mono, monospace' }}>
+            No 2+ qualifying legs (score ≥ 7) yet — wait for confirmed lineups or skip this slate.
+          </div>
+        )}
+      </HudCard>
+
+      {/* Rating filter */}
+      <div style={{ display: 'flex', gap: 6, marginBottom: 14, flexWrap: 'wrap' }}>
+        {[['all', `ALL (${counts.all})`], ['strong', `STRONG 10+ (${counts.strong})`], ['decent', `DECENT 7-9 (${counts.decent})`]].map(([k, l]) => (
+          <button key={k} onClick={() => setFilter(k)}
+            style={{ padding: '6px 14px', background: filter === k ? 'rgba(0,212,255,0.1)' : 'transparent',
+              border: `1px solid ${filter === k ? 'rgba(0,212,255,0.3)' : 'rgba(255,255,255,0.06)'}`,
+              color: filter === k ? 'var(--cyan)' : 'var(--muted)', fontFamily: 'Space Mono, monospace',
+              fontSize: 10, cursor: 'pointer', borderRadius: 2, letterSpacing: '0.08em' }}>
+            {l}
+          </button>
+        ))}
+      </div>
+
+      {/* Candidate cards */}
+      {displayed.length ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {displayed.map((c, i) => <CandidateCard key={`${c.id || c.name}-${i}`} c={c} />)}
+        </div>
+      ) : (
+        <div style={emptyMsg}>
+          {candidates.length ? 'No candidates match this filter.' : 'No scored batters yet — lineups may not be posted.'}
+        </div>
+      )}
+    </div>
+  );
+}
+
+Object.assign(window, { EdgeFinderTab, PitchingEdgeTab, HighContactTab, LowHrModelTab });

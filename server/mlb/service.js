@@ -534,6 +534,7 @@ function pickPitchingLine(splits) {
     oppSlg:     num(line.slg),
     oppOps:     num(line.ops),
     hrPer9:     num(line.homeRunsPer9),
+    goAo:       num(line.groundOutsToAirouts),
     record:     (line.wins != null && line.losses != null) ? `${line.wins}-${line.losses}` : null,
     throws:     line.pitchHand?.code || null,
   };
@@ -952,6 +953,444 @@ async function getHighContactReport(gamePk, options = {}) {
   return result;
 }
 
+/* ── LOW HOME RUN MODEL ─────────────────────────────────
+   Backend for the MLB game-detail "LOW HR MODEL" tab.
+   Finds Under-0.5-HR parlay candidates by combining:
+   - opposing pitcher HR/9 + rank among qualified starters
+   - batter career BvP HR history vs today's SP (Savant)
+   - batter no-HR rate (PA-based, scaled to game level)
+   - Savant statcast power profile (barrel% / hard-hit%)
+   - park HR factor, weather/wind, lineup spot
+   Scored with the 13-point blueprint: 10+ strong, 7-9 decent. */
+
+const HR9_BOARD_TTL = 6 * 60 * 60 * 1000;
+const STATCAST_TTL = 24 * 60 * 60 * 1000;
+const BATTER_PROFILE_TTL = 6 * 60 * 60 * 1000;
+
+// Approximate multi-year HR park factors (100 = league neutral).
+// Static by design — park HR behavior moves slowly year to year.
+const PARK_HR_FACTORS = [
+  { match: /great american/i, factor: 124 },
+  { match: /yankee/i, factor: 117 },
+  { match: /citizens bank/i, factor: 115 },
+  { match: /rate field|guaranteed rate/i, factor: 113 },
+  { match: /dodger/i, factor: 112 },
+  { match: /truist/i, factor: 110 },
+  { match: /american family/i, factor: 108 },
+  { match: /coors/i, factor: 106 },
+  { match: /sutter health/i, factor: 105 },
+  { match: /steinbrenner/i, factor: 105 },
+  { match: /angel/i, factor: 104 },
+  { match: /rogers centre/i, factor: 104 },
+  { match: /daikin|minute maid/i, factor: 104 },
+  { match: /citi field/i, factor: 102 },
+  { match: /chase field/i, factor: 102 },
+  { match: /nationals/i, factor: 102 },
+  { match: /wrigley/i, factor: 100 },
+  { match: /globe life/i, factor: 98 },
+  { match: /target field/i, factor: 98 },
+  { match: /progressive/i, factor: 98 },
+  { match: /fenway/i, factor: 96 },
+  { match: /camden/i, factor: 96 },
+  { match: /petco/i, factor: 95 },
+  { match: /comerica/i, factor: 94 },
+  { match: /busch/i, factor: 92 },
+  { match: /t-mobile/i, factor: 92 },
+  { match: /loandepot|loan depot/i, factor: 90 },
+  { match: /pnc/i, factor: 90 },
+  { match: /kauffman/i, factor: 88 },
+  { match: /oracle/i, factor: 84 },
+];
+
+function parkHrFactor(venueName) {
+  if (!venueName) return null;
+  const hit = PARK_HR_FACTORS.find(p => p.match.test(venueName));
+  return hit ? hit.factor : null;
+}
+
+// Innings like 5.2 mean 5⅔ — convert to outs before summing.
+function ipToOuts(ip) {
+  const n = Number(ip) || 0;
+  return Math.floor(n) * 3 + Math.round((n % 1) * 10);
+}
+
+async function getHr9Leaderboard(season) {
+  const cacheKey = `hr9_board_${season}`;
+  const cached = cacheGet(cacheKey);
+  if (cached) return cached;
+
+  // QUALIFIED is too strict mid-season (~65 pitchers); rank among all active
+  // starters instead so today's probables actually appear on the board.
+  let all = [];
+  try {
+    const url = `${MLB_API}/stats?stats=season&group=pitching&season=${season}&gameType=R&playerPool=ALL&limit=1500`;
+    const data = await fetchJson(url);
+    all = (data?.stats?.[0]?.splits || []).map(s => {
+      const st = s.stat || {};
+      return {
+        id: s.player?.id,
+        name: s.player?.fullName || null,
+        hrPer9: st.homeRunsPer9 != null && st.homeRunsPer9 !== '' ? Number(st.homeRunsPer9) : null,
+        ip: Number(st.inningsPitched || 0),
+        gs: Number(st.gamesStarted || 0),
+      };
+    }).filter(r => r.id && r.hrPer9 != null);
+  } catch {}
+
+  let rows = all.filter(r => r.ip >= 30 && r.gs >= 5);
+  if (rows.length < 30) rows = all.filter(r => r.ip >= 15 && r.gs >= 3); // early season
+  rows.sort((a, b) => a.hrPer9 - b.hrPer9);
+
+  const byId = {};
+  rows.forEach((r, i) => { byId[r.id] = { rank: i + 1, hrPer9: r.hrPer9, name: r.name }; });
+  const leagueAvgHr9 = rows.length ? Math.round(rows.reduce((s, r) => s + r.hrPer9, 0) / rows.length * 100) / 100 : 1.10;
+
+  const board = {
+    byId,
+    total: rows.length,
+    leagueAvgHr9,
+    hr9List: rows.map(r => r.hrPer9), // sorted asc — used for virtual ranking
+  };
+  cacheSet(cacheKey, board, rows.length ? HR9_BOARD_TTL : 30 * 60 * 1000);
+  return board;
+}
+
+// Savant statcast leaderboard (exit velo / barrels), one row per player.
+async function getStatcastIndex(season, type) {
+  const cacheKey = `statcast_${type}_${season}`;
+  const cached = cacheGet(cacheKey);
+  if (cached) return cached;
+
+  const url = `https://baseballsavant.mlb.com/leaderboard/statcast`
+    + `?type=${type}&year=${season}&position=&team=&min=25&csv=true`;
+  try {
+    const text = await fetchUrl(url);
+    const rows = parseCsv(text);
+    const num = v => (v == null || v === '') ? null : Number(v);
+    const byId = {};
+    for (const r of rows) {
+      const pid = r.player_id || r.id;
+      if (!pid) continue;
+      byId[String(pid).trim()] = {
+        barrelPct: num(r.brl_percent ?? r.barrel_batted_rate),
+        hardHitPct: num(r.ev95percent ?? r.hard_hit_percent),
+        avgEv: num(r.avg_hit_speed),
+      };
+    }
+    cacheSet(cacheKey, byId, STATCAST_TTL);
+    return byId;
+  } catch {
+    cacheSet(cacheKey, {}, 30 * 60 * 1000);
+    return {};
+  }
+}
+
+async function getPitcherRecentHr(pitcherId, season) {
+  if (!pitcherId) return null;
+  const cacheKey = `pitcher_recent_hr_${pitcherId}_${season}`;
+  const cached = cacheGet(cacheKey);
+  if (cached) return cached;
+  try {
+    const data = await fetchJson(`${MLB_API}/people/${pitcherId}/stats?stats=gameLog&group=pitching&season=${season}`);
+    const splits = data?.stats?.[0]?.splits || [];
+    const last3 = splits.slice(-3);
+    const hrLast3 = last3.reduce((s, g) => s + Number(g.stat?.homeRuns || 0), 0);
+    const outs = last3.reduce((s, g) => s + ipToOuts(g.stat?.inningsPitched), 0);
+    const result = { hrLast3, ipLast3: Math.round(outs / 3 * 10) / 10, games: last3.length };
+    cacheSet(cacheKey, result, PITCHER_STATS_TTL);
+    return result;
+  } catch { return null; }
+}
+
+// One call per batter: season line + vs-hand splits + game log for HR trend.
+async function getBatterHrProfile(batterId, season) {
+  if (!batterId) return null;
+  const cacheKey = `batter_hr_${batterId}_${season}`;
+  const cached = cacheGet(cacheKey);
+  if (cached) return cached;
+  const num = v => (v == null || v === '' || v === '.---' || v === '-.--') ? null : Number(v);
+  try {
+    const url = `${MLB_API}/people/${batterId}/stats`
+      + `?stats=season,statSplits,gameLog&group=hitting&season=${season}&sitCodes=vr,vl`;
+    const data = await fetchJson(url);
+    const byType = {};
+    for (const g of data?.stats || []) byType[g.type?.displayName || ''] = g.splits || [];
+
+    const st = byType.season?.[0]?.stat || {};
+    const avg = num(st.avg), slg = num(st.slg);
+    const profSeason = {
+      pa: Number(st.plateAppearances || 0),
+      g: Number(st.gamesPlayed || 0),
+      hr: Number(st.homeRuns || 0),
+      avg, slg,
+      iso: (avg != null && slg != null) ? Math.round((slg - avg) * 1000) / 1000 : null,
+    };
+
+    const hand = {};
+    for (const s of byType.statSplits || []) {
+      const code = s.split?.code;
+      if (code !== 'vr' && code !== 'vl') continue;
+      const sp = s.stat || {};
+      const a = num(sp.avg), sl = num(sp.slg);
+      const pa = Number(sp.plateAppearances || 0);
+      const hr = Number(sp.homeRuns || 0);
+      hand[code] = {
+        pa, hr,
+        iso: (a != null && sl != null) ? Math.round((sl - a) * 1000) / 1000 : null,
+        hrPerPa: pa > 0 ? hr / pa : null,
+      };
+    }
+
+    const logs = byType.gameLog || []; // chronological ascending
+    const hrInLast = n => logs.slice(-n).reduce((s, g) => s + Number(g.stat?.homeRuns || 0), 0);
+    const result = {
+      season: profSeason,
+      vsR: hand.vr || null,
+      vsL: hand.vl || null,
+      recent: { hr7: hrInLast(7), hr15: hrInLast(15), hr30: hrInLast(30) },
+    };
+    cacheSet(cacheKey, result, BATTER_PROFILE_TTL);
+    return result;
+  } catch { return null; }
+}
+
+function scoreLowHrCandidate({ side, batter, teamName, prof, bvpRow, sc, oppPitcher, parkFactor, windFlag, weather, leagueAvgHr9 }) {
+  const season = prof?.season || {};
+  const hrPerPa = season.pa > 0 ? season.hr / season.pa : null;
+  const paPerGame = season.g > 0 ? season.pa / season.g : null;
+  // P(no HR in a game) from the per-PA rate raised to typical PAs per game.
+  const gameNoHrPct = (hrPerPa != null && paPerGame) ? Math.pow(1 - hrPerPa, paPerGame) : null;
+  const iso = season.iso ?? null;
+  const vsHand = oppPitcher?.throws === 'L' ? prof?.vsL : oppPitcher?.throws === 'R' ? prof?.vsR : null;
+
+  const breakdown = [];
+  const add = (key, label, max, pts, detail) => breakdown.push({ key, label, max, pts, detail });
+
+  add('pitcherTop15', 'SP TOP-15 LOW HR/9', 2, oppPitcher?.top15 ? 2 : 0,
+    oppPitcher?.hrPer9 != null
+      ? `${oppPitcher.hrPer9.toFixed(2)} HR/9 · rank ${oppPitcher.rank ?? '—'}/${oppPitcher.totalRanked ?? '—'}`
+      : 'no HR/9 data');
+
+  // 0 career HR vs SP: full credit needs a real sample; never-faced is neutral.
+  const bvpPa = bvpRow?.pa ?? 0;
+  const bvpHr = bvpRow?.hr ?? 0;
+  const bvpPts = bvpPa > 0 && bvpHr === 0 ? (bvpPa >= 6 ? 2 : 1) : bvpPa === 0 ? 1 : 0;
+  add('bvpZeroHr', '0 HR vs PITCHER', 2, bvpPts,
+    bvpPa > 0 ? `${bvpHr} HR in ${bvpPa} PA vs ${oppPitcher?.name || 'SP'}` : 'never faced (neutral credit)');
+
+  add('noHr94', 'NO-HR RATE ≥ 94%', 3, gameNoHrPct != null && gameNoHrPct >= 0.94 ? 3 : 0,
+    gameNoHrPct != null
+      ? `${(gameNoHrPct * 100).toFixed(1)}% HR-less games (${season.hr} HR / ${season.pa} PA)`
+      : 'no season sample');
+
+  add('lowIso', 'LOW ISO', 1, iso != null && iso <= 0.120 ? 1 : 0,
+    iso != null ? `ISO ${iso.toFixed(3)}` : 'no data');
+
+  add('lowBarrel', 'LOW BARREL%', 1, sc?.barrelPct != null && sc.barrelPct < 6 ? 1 : 0,
+    sc?.barrelPct != null ? `${sc.barrelPct.toFixed(1)}% barrels` : 'no statcast sample');
+
+  add('pitcherGb', 'SP GROUND-BALL LEAN', 1, oppPitcher?.goAo != null && oppPitcher.goAo >= 1.3 ? 1 : 0,
+    oppPitcher?.goAo != null ? `GO/AO ${oppPitcher.goAo.toFixed(2)}` : 'no data');
+
+  add('parkSuppress', 'PARK SUPPRESSES HR', 1, parkFactor != null && parkFactor <= 96 ? 1 : 0,
+    parkFactor != null ? `park HR factor ${parkFactor}` : 'unknown park');
+
+  add('windOk', 'WIND NOT OUT', 1, windFlag !== 'OUT' ? 1 : 0,
+    windFlag === 'DOME' ? 'roof closed / dome' : `wind: ${weather?.wind || 'unknown'}`);
+
+  add('bottomLineup', 'BATTING 7-9', 1, (batter.order || 0) >= 7 ? 1 : 0,
+    batter.order ? `batting #${batter.order}` : 'order unknown');
+
+  const score = breakdown.reduce((s, b) => s + b.pts, 0);
+  const maxScore = breakdown.reduce((s, b) => s + b.max, 0);
+  const rating = score >= 10 ? 'STRONG' : score >= 7 ? 'DECENT' : 'AVOID';
+
+  const flags = [];
+  if (bvpPa > 0 && bvpPa < 6 && bvpHr === 0) flags.push('SMALL BvP SAMPLE');
+  if (bvpPa === 0) flags.push('NO BvP HISTORY');
+  if (vsHand?.iso != null && vsHand.iso >= 0.180) flags.push(`POWER vs ${oppPitcher?.throws || '?'}HP`);
+  if ((prof?.recent?.hr7 ?? 0) >= 2 || (prof?.recent?.hr15 ?? 0) >= 4) flags.push('HOT HR TREND');
+  if ((sc?.barrelPct ?? 0) >= 10 || (iso ?? 0) >= 0.200) flags.push('POWER BAT');
+
+  // Naive model probability of no HR today: season per-PA rate blended with
+  // the vs-hand rate, adjusted for pitcher / park / weather, raised to an
+  // estimated PA count for the lineup spot. Compare vs sportsbook implied.
+  let modelNoHrPct = null, fairOdds = null;
+  if (hrPerPa != null && paPerGame) {
+    // Smooth toward the league HR/PA rate (~3.1%) with a 60-PA prior so small
+    // samples and 0-HR hitters don't produce a misleading 100% probability.
+    const LEAGUE_HR_PA = 0.031, PRIOR_PA = 60;
+    const smooth = (hr, pa) => (hr + LEAGUE_HR_PA * PRIOR_PA) / (pa + PRIOR_PA);
+    let eff = smooth(season.hr, season.pa);
+    if (vsHand?.hrPerPa != null && vsHand.pa >= 60) eff = 0.5 * eff + 0.5 * smooth(vsHand.hr, vsHand.pa);
+    let mult = 1;
+    if (oppPitcher?.hrPer9 != null && leagueAvgHr9) mult *= clamp(oppPitcher.hrPer9 / leagueAvgHr9, 0.5, 1.6);
+    if (parkFactor != null) mult *= clamp(parkFactor / 100, 0.8, 1.25);
+    if (windFlag === 'OUT') mult *= 1.10;
+    if (windFlag === 'IN') mult *= 0.90;
+    const temp = weather?.temp;
+    if (windFlag !== 'DOME' && temp != null) {
+      if (temp >= 85) mult *= 1.05;
+      else if (temp <= 55) mult *= 0.95;
+    }
+    const paEst = clamp(4.8 - 0.12 * ((batter.order || 5) - 1), 3.5, 5.0);
+    const p = clamp(Math.pow(clamp(1 - eff * mult, 0, 1), paEst), 0.01, 0.995);
+    modelNoHrPct = Math.round(p * 1000) / 10;
+    fairOdds = p > 0.5 ? -Math.round(100 * p / (1 - p)) : Math.round(100 * (1 - p) / p);
+  }
+
+  return {
+    side,
+    id: batter.id,
+    name: batter.name,
+    position: batter.position,
+    order: batter.order,
+    teamName,
+    pitcher: oppPitcher?.name || null,
+    pitcherThrows: oppPitcher?.throws || null,
+    bvp: bvpRow ? { pa: bvpRow.pa, ab: bvpRow.ab, h: bvpRow.hits ?? 0, hr: bvpRow.hr, k: bvpRow.k } : null,
+    season: {
+      pa: season.pa ?? null, g: season.g ?? null, hr: season.hr ?? null,
+      avg: season.avg ?? null, slg: season.slg ?? null, iso,
+      hrPerPaPct: hrPerPa != null ? Math.round(hrPerPa * 1000) / 10 : null,
+      gameNoHrPct: gameNoHrPct != null ? Math.round(gameNoHrPct * 1000) / 10 : null,
+    },
+    statcast: sc ? { barrelPct: sc.barrelPct, hardHitPct: sc.hardHitPct } : null,
+    vsHand: vsHand ? { hand: oppPitcher?.throws, pa: vsHand.pa, hr: vsHand.hr, iso: vsHand.iso } : null,
+    recent: prof?.recent || null,
+    score, maxScore, rating, breakdown, flags,
+    modelNoHrPct, fairOdds,
+  };
+}
+
+async function getLowHrReport(gamePk, options = {}) {
+  const cacheKey = `lowhr_${gamePk}`;
+  if (!options.refresh) {
+    const cached = cacheGet(cacheKey);
+    if (cached) return cached;
+  }
+
+  const season = currentMlbSeason();
+  const [bvp, lineups, weather, hr9Board, scBat, scPit] = await Promise.all([
+    getGameBvp(gamePk, options),
+    getGameLineups(gamePk, options),
+    fetchGameWeather(gamePk),
+    getHr9Leaderboard(season),
+    getStatcastIndex(season, 'batter'),
+    getStatcastIndex(season, 'pitcher'),
+  ]);
+
+  // Shared game context: park + wind flag
+  const venue = weather?.venue || null;
+  const factor = parkHrFactor(venue);
+  const roof = weather?.roofType || null;
+  const domed = /dome|roof closed/i.test(String(weather?.condition || ''))
+    || /indoor|dome/i.test(String(roof || ''));
+  const windStr = String(weather?.wind || '');
+  const windFlag = domed ? 'DOME'
+    : /out/i.test(windStr) ? 'OUT'
+    : /\bin\b|in from/i.test(windStr) ? 'IN'
+    : 'NEUTRAL';
+
+  const buildPitcher = async side => {
+    const p = lineups[side]?.probablePitcher;
+    if (!p) return null;
+    const [stats, recent] = await Promise.all([
+      getPitcherStats(p.id, season),
+      getPitcherRecentHr(p.id, season),
+    ]);
+    const boardRow = hr9Board.byId[p.id] || null;
+    const sc = scPit[String(p.id)] || null;
+    const hrPer9 = stats?.current?.hrPer9 ?? boardRow?.hrPer9 ?? null;
+    // Not on the board (missed the workload filter) but enough IP to trust the
+    // rate: slot them virtually into the sorted board to get a fair rank.
+    let rank = boardRow?.rank ?? null;
+    let rankSource = boardRow ? 'board' : null;
+    if (!boardRow && hrPer9 != null && (stats?.current?.ip ?? 0) >= 15 && hr9Board.hr9List?.length) {
+      const idx = hr9Board.hr9List.findIndex(v => v >= hrPer9);
+      rank = idx === -1 ? hr9Board.hr9List.length + 1 : idx + 1;
+      rankSource = 'virtual';
+    }
+    return {
+      id: p.id,
+      name: p.name,
+      throws: stats?.throws || null,
+      hrPer9,
+      prevHrPer9: stats?.previous?.hrPer9 ?? null,
+      rank,
+      rankSource,
+      totalRanked: hr9Board.total,
+      top15: rank != null && rank <= 15,
+      goAo: stats?.current?.goAo ?? null,
+      barrelPctAllowed: sc?.barrelPct ?? null,
+      hardHitPctAllowed: sc?.hardHitPct ?? null,
+      hrLast3: recent?.hrLast3 ?? null,
+      ipLast3: recent?.ipLast3 ?? null,
+      era: stats?.current?.era ?? null,
+      ip: stats?.current?.ip ?? null,
+    };
+  };
+  const [awayPitcher, homePitcher] = await Promise.all([buildPitcher('away'), buildPitcher('home')]);
+  const pitchers = { away: awayPitcher, home: homePitcher };
+
+  // Score every batter against the OPPOSING starter.
+  const candidates = [];
+  for (const side of ['away', 'home']) {
+    const oppSide = side === 'away' ? 'home' : 'away';
+    const team = lineups[side];
+    const oppPitcher = pitchers[oppSide];
+    if (!oppPitcher || !team?.lineup?.length) continue;
+    const matchup = bvp?.matchups?.find(m => m.side === side) || null;
+
+    const profiles = await Promise.all(team.lineup.map(b => getBatterHrProfile(b.id, season)));
+    team.lineup.forEach((b, i) => {
+      const bvpRow = matchup?.batters?.find(x => x.id === b.id)?.bvp || null;
+      candidates.push(scoreLowHrCandidate({
+        side, batter: b, teamName: team.teamName,
+        prof: profiles[i],
+        bvpRow: bvpRow && !bvpRow.error ? bvpRow : null,
+        sc: scBat[String(b.id)] || null,
+        oppPitcher,
+        parkFactor: factor, windFlag, weather,
+        leagueAvgHr9: hr9Board.leagueAvgHr9,
+      }));
+    });
+  }
+  candidates.sort((a, b) => (b.score - a.score) || ((b.modelNoHrPct ?? 0) - (a.modelNoHrPct ?? 0)));
+
+  // Suggested 2-4 leg slip: strong candidates first, fill with decent.
+  const slipPool = candidates.filter(c => c.score >= 7);
+  const slip = slipPool.length >= 2
+    ? slipPool.slice(0, 4).map(c => ({
+        name: c.name, side: c.side, teamName: c.teamName, order: c.order,
+        score: c.score, maxScore: c.maxScore, rating: c.rating,
+        modelNoHrPct: c.modelNoHrPct, fairOdds: c.fairOdds, pitcher: c.pitcher,
+      }))
+    : [];
+
+  const result = {
+    gamePk,
+    season,
+    park: {
+      venue,
+      factor,
+      roofType: roof,
+      classification: factor == null ? 'UNKNOWN' : factor >= 105 ? 'HR-FRIENDLY' : factor <= 96 ? 'HR-SUPPRESSING' : 'NEUTRAL',
+    },
+    weather,
+    windFlag,
+    leagueAvgHr9: hr9Board.leagueAvgHr9,
+    pitchers,
+    candidates,
+    slip,
+    status: bvp?.status || null,
+    source: 'MLB Stats API + Baseball Savant Statcast',
+    cachedAt: new Date().toISOString(),
+  };
+  cacheSet(cacheKey, result, LIVE_CACHE_TTL);
+  return result;
+}
+
 module.exports = {
   getGames,
   getGameLineups,
@@ -961,4 +1400,5 @@ module.exports = {
   findGamePkByAbbrDate,
   findGamePkByTeams,
   getHighContactReport,
+  getLowHrReport,
 };

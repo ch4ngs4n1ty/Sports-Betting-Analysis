@@ -14,6 +14,7 @@ const {
   findGamePkByAbbrDate,
   findGamePkByTeams,
   getHighContactReport,
+  getLowHrReport,
 } = require('./mlb/service');
 const {
   getNbaStartingLineups,
@@ -124,6 +125,35 @@ const server = http.createServer(async (req, res) => {
       const awayPitcher = url.searchParams.get('awayPitcher') || undefined;
       const homePitcher = url.searchParams.get('homePitcher') || undefined;
       const report = await getHighContactReport(gamePk, { refresh, awayLineup, homeLineup, awayPitcher, homePitcher });
+      return sendJson(res, report);
+    }
+
+    // GET /api/mlb/low-hr-model?gamePk=... OR ?away=...&home=...&date=YYYY-MM-DD
+    //   Under-0.5-HR parlay candidates: opposing-pitcher HR/9 + league rank,
+    //   batter career BvP HR vs today's SP, batter no-HR rate, statcast
+    //   barrel%/hard-hit%, park HR factor, weather/wind, lineup spot —
+    //   combined into a 13-point score with a suggested 2-4 leg slip.
+    //   Add &refresh=1 to bypass cache.
+    if (path === '/api/mlb/low-hr-model') {
+      let gamePk = url.searchParams.get('gamePk');
+      if (!gamePk) {
+        const away = url.searchParams.get('away');
+        const home = url.searchParams.get('home');
+        const date = url.searchParams.get('date') || undefined;
+        if (!away || !home) return sendError(res, 'gamePk or away+home team names required');
+        gamePk = await findGamePkByTeams(away, home, date);
+        if (!gamePk) return sendError(res, `No game found for ${away} @ ${home}`, 404);
+      }
+      const refresh = url.searchParams.get('refresh') === '1';
+      const parseLineup = param => {
+        const v = url.searchParams.get(param);
+        return v ? v.split(',').map(s => s.trim()).filter(Boolean) : undefined;
+      };
+      const awayLineup = parseLineup('awayLineup');
+      const homeLineup = parseLineup('homeLineup');
+      const awayPitcher = url.searchParams.get('awayPitcher') || undefined;
+      const homePitcher = url.searchParams.get('homePitcher') || undefined;
+      const report = await getLowHrReport(gamePk, { refresh, awayLineup, homeLineup, awayPitcher, homePitcher });
       return sendJson(res, report);
     }
 

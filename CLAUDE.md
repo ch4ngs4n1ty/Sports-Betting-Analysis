@@ -1,7 +1,7 @@
 # PlayIQ — Project Blueprint for Claude
 
 ## What This Project Is
-PlayIQ is a dark-mode sports betting intelligence dashboard with an HUD / sci-fi aesthetic. The user picks a sport → browses today's games → drills into a game for deep analysis across multiple tabs (Overview, H2H, Last 5, Rosters, MLB Edge Finder, Pitching, AI Plays).
+PlayIQ is a dark-mode sports betting intelligence dashboard with an HUD / sci-fi aesthetic. The user picks a sport → browses today's games → drills into a game for deep analysis across multiple tabs (Overview, H2H, Last 5, Rosters, MLB Edge Finder, Pitching, Low HR Model, High Contact, AI Plays).
 
 It is a **full-stack app** with a vanilla-JS Node backend and a React-via-CDN browser frontend (no build step).
 
@@ -24,14 +24,14 @@ playiq/
 │   │       ├── games-screen.jsx                — GamesScreen (today's games)
 │   │       └── game-detail-screen.jsx          — GameDetailScreen + TABS_MLB / TABS_NBA / TABS_OTHER + Phase 1 / Phase 2 loading
 │   └── sports/
-│       ├── mlb/tabs.jsx                        — MLB-specific tabs: EdgeFinderTab, PitchingEdgeTab, HighContactTab
+│       ├── mlb/tabs.jsx                        — MLB-specific tabs: EdgeFinderTab, PitchingEdgeTab, LowHrModelTab, HighContactTab
 │       └── nba/tabs.jsx                        — NBA-specific tabs: NbaEdgeFinderTab, NbaLineupTab, NbaDefenseVsPositionTab
 ├── manifest.json                               — PWA manifest
 ├── icon.svg                                    — PWA icon
 ├── server/
 │   ├── index.js                                — Node HTTP server (port 3001): routes to mlb/ and nba/ services
 │   ├── shared/{cache.js,http.js}               — In-memory cache + fetch helpers
-│   ├── mlb/service.js                          — MLB Stats API + Baseball Savant: games, lineups, BvP, weather, high-contact report (pitcher stats + arsenal + splits + bullpen + scoring)
+│   ├── mlb/service.js                          — MLB Stats API + Baseball Savant: games, lineups, BvP, weather, high-contact report (pitcher stats + arsenal + splits + bullpen + scoring), low-HR model (HR/9 board + no-HR rates + park/wind + 13-pt slip scoring)
 │   ├── nba/{service.js,positional-defense.js,positions.js}  — NBA endpoints (lineups, def-vs-position)
 │   ├── package.json
 │   ├── start.sh                                — Kills any existing :3001 process, starts server in background, logs to server.log
