@@ -17,8 +17,13 @@ const nbaStatColorFor = (v, sk) => {
 };
 
 function NbaEdgeFinderTab({ gameData }) {
-  const { gameInfo, nbaEdgeData } = gameData;
+  const { gameInfo, nbaEdgeData, nbaDefenseEdge } = gameData;
   const [filter, setFilter] = React.useState('all');
+  const [modelStat, setModelStat] = React.useState('pts');
+  const [modelLine, setModelLine] = React.useState(NBA_THRESHOLD_DEFAULT_LINE.pts);
+
+  // Switching stat resets the line to that stat's default bucket.
+  const selectStat = stat => { setModelStat(stat); setModelLine(NBA_THRESHOLD_DEFAULT_LINE[stat]); };
 
   if (!nbaEdgeData) {
     if (gameData?._loading?.nbaEdgeData !== false) return <TabLoader source="ESPN" label="Building player edge profiles..." rows={5} />;
@@ -28,6 +33,56 @@ function NbaEdgeFinderTab({ gameData }) {
   if (!players?.length) return <div style={emptyMsg}>No players found.</div>;
 
   const displayed = filter === 'all' ? players : players.filter(p => p.side === filter);
+
+  // ── Projection model board: rank displayed players by P(stat ≥ line) ──
+  // Plain computation (not memoized) so it stays below the early returns
+  // without breaking the rules of hooks; it's cheap (≤16 players).
+  const _modelTotal = nbaDefenseEdge?.total_rows || 150;
+  const modelBoard = displayed
+    .map(p => {
+      const de = findNbaDefenseEdge(nbaDefenseEdge, p.name, p.side);
+      const r = nbaThresholdProbability(p.proj, modelStat, modelLine, de, _modelTotal);
+      return r ? { p, r } : null;
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.r.prob - a.r.prob);
+
+  const ModelRow = ({ entry, idx }) => {
+    const { p, r } = entry;
+    const c = nbaProbColor(r.prob);
+    const pct = Math.round(r.prob * 100);
+    const confColor = r.conf === 'HIGH' ? '#00ff88' : r.conf === 'MED' ? '#ffd060' : 'var(--dim)';
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '9px 10px', borderRadius: 3,
+        background: idx % 2 ? 'transparent' : 'rgba(255,255,255,0.02)', flexWrap: 'wrap' }}>
+        <span style={{ width: 20, textAlign: 'center', fontSize: 14, fontFamily: 'Orbitron, monospace', fontWeight: 900,
+          color: idx === 0 ? '#00ff88' : idx <= 2 ? 'var(--cyan)' : 'var(--dim)' }}>{idx + 1}</span>
+        <img src={p.headshot} alt={p.name} style={{ width: 30, height: 30, borderRadius: '50%', objectFit: 'cover', border: `1px solid ${p.teamColor}55` }}
+          onError={e => e.target.style.display = 'none'} />
+        <div style={{ flex: 1, minWidth: 150 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 13, fontFamily: 'Space Mono, monospace', color: 'var(--text)', fontWeight: 700 }}>{p.name}</span>
+            <span style={{ fontSize: 8, padding: '1px 6px', border: `1px solid ${p.teamColor}66`, color: p.teamColor, fontFamily: 'Space Mono, monospace', borderRadius: 2, letterSpacing: '0.08em' }}>{p.teamAbbr} {p.pos}</span>
+            {p.isStarter && <span style={{ fontSize: 8, color: 'var(--green)', fontFamily: 'Orbitron, monospace', fontWeight: 700, letterSpacing: '0.12em' }}>★</span>}
+          </div>
+          <div style={{ fontSize: 9, color: 'var(--muted)', fontFamily: 'Space Mono, monospace', marginTop: 2 }}>
+            proj <span style={{ color: 'var(--text)', fontWeight: 700 }}>{r.proj.toFixed(1)}</span>
+            {' · '}{r.hasMatchup && r.defRank != null
+              ? <span style={{ color: nbaDefenseRankColor(r.defRank) === 'red' ? '#ff8a55' : nbaDefenseRankColor(r.defRank) === 'green' ? '#5ff5a5' : '#ffd060' }}>vs #{r.defRank}/{r.total} D</span>
+              : <span style={{ color: 'var(--dim)' }}>no matchup adj</span>}
+            {' · '}<span style={{ color: confColor }}>{r.conf}</span>
+          </div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 160, flex: 1 }}>
+          <div style={{ flex: 1, height: 7, background: 'rgba(255,255,255,0.05)', borderRadius: 4, overflow: 'hidden' }}>
+            <div style={{ height: '100%', width: `${pct}%`, background: c, boxShadow: `0 0 8px ${c}88`, borderRadius: 4,
+              transition: 'width 0.6s cubic-bezier(0.16,1,0.3,1)' }} />
+          </div>
+          <span style={{ fontSize: 18, fontFamily: 'Orbitron, monospace', fontWeight: 900, color: c, width: 50, textAlign: 'right' }}>{pct}%</span>
+        </div>
+      </div>
+    );
+  };
 
   const NbaPlayerCard = ({ p }) => {
     const [open, setOpen] = React.useState(false);
@@ -125,6 +180,66 @@ function NbaEdgeFinderTab({ gameData }) {
           ))}
         </div>
       </div>
+
+      {/* ── PROJECTION MODEL BOARD ── */}
+      <HudCard style={{ padding: '16px 18px', marginBottom: 22 }} accent="#00ff88">
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
+          <span style={{ fontSize: 12, fontFamily: 'Orbitron, monospace', fontWeight: 900, color: '#00ff88', letterSpacing: '0.14em' }}>
+            ◆ PROJECTION MODEL
+          </span>
+          <span style={{ fontSize: 9, fontFamily: 'Space Mono, monospace', color: 'var(--muted)', letterSpacing: '0.1em' }}>
+            LIKELIHOOD TO HIT THRESHOLD · ranked
+          </span>
+          {!nbaDefenseEdge && (
+            <span style={{ marginLeft: 'auto', fontSize: 9, fontFamily: 'Space Mono, monospace', color: 'var(--dim)' }}>
+              matchup adj loading…
+            </span>
+          )}
+        </div>
+
+        {/* Stat + line controls */}
+        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'center', marginBottom: 14 }}>
+          <div style={{ display: 'flex', gap: 5 }}>
+            {['pts', 'reb', 'ast', 'pra'].map(s => (
+              <button key={s} onClick={() => selectStat(s)}
+                style={{ padding: '5px 13px', background: modelStat === s ? 'rgba(0,255,136,0.12)' : 'transparent',
+                  border: `1px solid ${modelStat === s ? 'rgba(0,255,136,0.4)' : 'rgba(255,255,255,0.08)'}`,
+                  color: modelStat === s ? '#00ff88' : 'var(--muted)', fontFamily: 'Orbitron, monospace', fontWeight: 700,
+                  fontSize: 10, cursor: 'pointer', borderRadius: 2, letterSpacing: '0.1em' }}>{NBA_STAT_LABELS[s]}</button>
+            ))}
+          </div>
+          <div style={{ width: 1, height: 22, background: 'rgba(255,255,255,0.08)' }} />
+          <div style={{ display: 'flex', gap: 5 }}>
+            {NBA_THRESHOLD_BUCKETS[modelStat].map(line => (
+              <button key={line} onClick={() => setModelLine(line)}
+                style={{ padding: '5px 12px', background: modelLine === line ? 'rgba(0,212,255,0.12)' : 'transparent',
+                  border: `1px solid ${modelLine === line ? 'rgba(0,212,255,0.4)' : 'rgba(255,255,255,0.08)'}`,
+                  color: modelLine === line ? 'var(--cyan)' : 'var(--dim)', fontFamily: 'Space Mono, monospace',
+                  fontSize: 10, cursor: 'pointer', borderRadius: 2, letterSpacing: '0.06em' }}>{line}+</button>
+            ))}
+          </div>
+          <span style={{ marginLeft: 'auto', fontSize: 13, fontFamily: 'Orbitron, monospace', fontWeight: 700, color: 'var(--text)', letterSpacing: '0.08em' }}>
+            {modelLine}+ {NBA_STAT_LABELS[modelStat]}
+          </span>
+        </div>
+
+        {/* Ranked rows */}
+        {modelBoard.length ? (
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            {modelBoard.slice(0, 10).map((entry, i) => <ModelRow key={entry.p.id || i} entry={entry} idx={i} />)}
+          </div>
+        ) : (
+          <div style={{ fontSize: 10, color: 'var(--dim)', fontFamily: 'Space Mono, monospace', padding: '12px 0' }}>
+            No players with game-log data yet.
+          </div>
+        )}
+
+        <div style={{ fontSize: 9, color: 'var(--muted)', fontFamily: 'Space Mono, monospace', marginTop: 12, lineHeight: 1.6, letterSpacing: '0.04em' }}>
+          Normal model fit to each player's game log, mean shifted by last-5 form and opponent defense-vs-position rank.
+          Confidence reflects sample size + role stability. Estimates only — not a betting guarantee.
+        </div>
+      </HudCard>
+
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         {displayed.map((p, i) => <NbaPlayerCard key={p.id || i} p={p} />)}
       </div>

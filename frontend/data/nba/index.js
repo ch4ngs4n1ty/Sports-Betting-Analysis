@@ -131,6 +131,24 @@ async function buildNbaEdgeData(gameInfo) {
     p.avgAst = avg(p.l5, 'ast');
     p.seasonMpg = avg(log, 'min');
     p.seasonGames = log.length;
+
+    // Projection inputs: per-stat game-by-game arrays (most-recent first),
+    // built from games actually PLAYED so DNPs don't drag the mean to 0.
+    // The threshold model fits a distribution to these at render time.
+    const played = log.filter(g => (g.min || 0) > 0);
+    const col = key => played.map(g => Number(g[key]) || 0);
+    const minutes = col('min');
+    p.proj = {
+      gamesPlayed: played.length,
+      minMean: _nbaMean(minutes),
+      minStd: _nbaStd(minutes),
+      vals: {
+        pts: col('pts'),
+        reb: col('reb'),
+        ast: col('ast'),
+        pra: played.map(g => (g.pts || 0) + (g.reb || 0) + (g.ast || 0)),
+      },
+    };
   }));
 
   // Trim per side: starters always kept, then top bench by minutes to fill TOP_N.
@@ -576,6 +594,112 @@ async function fetchNbaDefenseVsPositionTable(options = {}) {
   }
 }
 
+/* ============================================================
+   NBA THRESHOLD PROJECTION MODEL
+   A transparent statistical model (NOT a trained ML net): for a
+   given player + stat + line, fit a Normal distribution to their
+   game-log values, shift the mean by recent form and the opponent's
+   defense-vs-position rank, then compute P(stat ≥ line).
+   Pure functions over the `p.proj` shape built in buildNbaEdgeData.
+   ============================================================ */
+
+// Preset threshold buckets per stat, plus a sensible default line.
+const NBA_THRESHOLD_BUCKETS = {
+  pts: [10, 15, 20, 25, 30],
+  reb: [4, 6, 8, 10, 12],
+  ast: [2, 4, 6, 8, 10],
+  pra: [20, 25, 30, 35, 40],
+};
+const NBA_THRESHOLD_DEFAULT_LINE = { pts: 20, reb: 8, ast: 6, pra: 30 };
+const NBA_STAT_LABELS = { pts: 'PTS', reb: 'REB', ast: 'AST', pra: 'PRA' };
+
+// Coefficient-of-variation floor + absolute floor on σ. Prevents a tiny or
+// low-variance sample from producing an overconfident probability.
+const _NBA_CV_FLOOR = { pts: 0.30, reb: 0.42, ast: 0.45, pra: 0.26 };
+const _NBA_ABS_FLOOR = { pts: 2.0, reb: 1.3, ast: 1.3, pra: 3.0 };
+
+function _nbaMean(a) { return a.length ? a.reduce((s, x) => s + x, 0) / a.length : 0; }
+function _nbaStd(a) {
+  if (a.length < 2) return 0;
+  const m = _nbaMean(a);
+  return Math.sqrt(a.reduce((s, x) => s + (x - m) * (x - m), 0) / (a.length - 1));
+}
+// erf (Abramowitz & Stegun 7.1.26) → standard-normal CDF.
+function _nbaErf(x) {
+  const sign = x < 0 ? -1 : 1; x = Math.abs(x);
+  const t = 1 / (1 + 0.3275911 * x);
+  const y = 1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-x * x);
+  return sign * y;
+}
+function _nbaNormCdf(x) { return 0.5 * (1 + _nbaErf(x / Math.SQRT2)); }
+
+// Defense-vs-position rank → mean multiplier. rank 1 = toughest D (suppress),
+// rank N = weakest D (boost). Capped at ±~12%.
+function _nbaDefMultiplier(rank, total) {
+  if (rank == null || !total) return 1;
+  const pct = (rank - 0.5) / total;          // 0 = toughest .. 1 = weakest
+  return Math.max(0.88, Math.min(1.12, 1 + 0.10 * (pct - 0.5) * 2));
+}
+
+// defEntry: a row from findNbaDefenseEdge (may be null for bench players).
+// Returns null when the player has no usable game sample.
+function nbaThresholdProbability(proj, stat, line, defEntry, total) {
+  const vals = proj?.vals?.[stat];
+  if (!vals || vals.length < 1) return null;
+  const n = vals.length;
+  const T = total || 150;
+
+  const seasonMean = _nbaMean(vals);
+  const recent = vals.slice(0, Math.min(5, n));      // vals are recent-first
+  const recentMean = _nbaMean(recent);
+  const muBase = n >= 3 ? 0.65 * seasonMean + 0.35 * recentMean : seasonMean;
+
+  // Matchup multiplier — for PRA blend pts/reb/ast by each stat's mean share.
+  let mult = 1, defRank = null;
+  if (defEntry) {
+    if (stat === 'pra') {
+      const mp = _nbaMean(proj.vals.pts), mr = _nbaMean(proj.vals.reb), ma = _nbaMean(proj.vals.ast);
+      const tot = mp + mr + ma || 1;
+      mult = (mp * _nbaDefMultiplier(defEntry.ranks?.pts, T)
+            + mr * _nbaDefMultiplier(defEntry.ranks?.reb, T)
+            + ma * _nbaDefMultiplier(defEntry.ranks?.ast, T)) / tot;
+      defRank = defEntry.ranks?.pts ?? defEntry.rank ?? null;
+    } else {
+      defRank = defEntry.ranks?.[stat] ?? (stat === 'pts' ? defEntry.rank : null);
+      mult = _nbaDefMultiplier(defRank, T);
+    }
+  }
+  const mu = muBase * mult;
+
+  let sd = Math.max(_nbaStd(vals), _NBA_CV_FLOOR[stat] * mu, _NBA_ABS_FLOOR[stat]);
+
+  // P(X ≥ line) with a 0.5 continuity correction (lines are integers).
+  const pNorm = 1 - _nbaNormCdf((line - 0.5 - mu) / sd);
+  const emp = vals.filter(v => v >= line).length / n;          // empirical hit rate
+  let prob = n >= 10 ? 0.8 * pNorm + 0.2 * emp : pNorm;         // light regularization
+  prob = Math.max(0.01, Math.min(0.99, prob));
+
+  const minStable = (proj.minStd != null && proj.minMean > 0) ? (proj.minStd / proj.minMean < 0.35) : true;
+  const conf = (n >= 15 && defEntry && minStable) ? 'HIGH' : n >= 8 ? 'MED' : 'LOW';
+
+  return {
+    prob, proj: mu, baseMean: seasonMean, recentMean, sd,
+    line, stat, defRank, total: T, hasMatchup: !!defEntry, mult,
+    seasonHitRate: emp,
+    l5HitRate: recent.length ? recent.filter(v => v >= line).length / recent.length : null,
+    n, conf,
+  };
+}
+
+// Probability → color token for the model board.
+function nbaProbColor(prob) {
+  if (prob == null) return 'var(--dim)';
+  if (prob >= 0.70) return '#00ff88';
+  if (prob >= 0.55) return '#ffd060';
+  if (prob >= 0.40) return '#00d4ff';
+  return '#ff6b35';
+}
+
 Object.assign(window, {
   fetchNbaPlayerGameLog,
   fetchNbaStartingLineup,
@@ -585,4 +709,9 @@ Object.assign(window, {
   nbaDefenseRankColor,
   buildNbaEdgeData,
   buildNbaLineupData,
+  nbaThresholdProbability,
+  nbaProbColor,
+  NBA_THRESHOLD_BUCKETS,
+  NBA_THRESHOLD_DEFAULT_LINE,
+  NBA_STAT_LABELS,
 });

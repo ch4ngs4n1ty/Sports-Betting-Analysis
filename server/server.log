@@ -158,3 +158,6 @@
 [6/12/2026, 1:26:28 PM MDT] PlayIQ server running on http://localhost:3001
 [UNCAUGHT] listen EADDRINUSE: address already in use 0.0.0.0:3001
 [6/13/2026, 9:59:57 AM MDT] PlayIQ server running on http://localhost:3001
+[nba/positional-defense] season=2025-26 reuse=true processed=1297 new=0
+[6/13/2026, 1:06:49 PM MDT] PlayIQ server running on http://localhost:3001
+[UNCAUGHT] listen EADDRINUSE: address already in use 0.0.0.0:3001

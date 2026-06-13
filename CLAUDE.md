@@ -15,7 +15,7 @@ playiq/
 │   ├── data/
 │   │   ├── shared/core.js                      — ESPN helpers, SPORTS_CONFIG, fetchAllGames, fetchTeamForm, fetchH2H, fetchInjuries, fetchRoster, Claude API, AI plays
 │   │   ├── mlb/index.js                        — MLB-only helpers: fetchGameBvp, fetchHighContactReport, fetchWeather, fetchMlbStarters, fetchPlayerGameLog, buildMlbEdgeData
-│   │   └── nba/index.js                        — NBA-only helpers: fetchNbaPlayerGameLog, buildNbaEdgeData, lineup + positional-defense fetchers
+│   │   └── nba/index.js                        — NBA-only helpers: fetchNbaPlayerGameLog, buildNbaEdgeData (incl. per-player `proj` distribution), lineup + positional-defense fetchers, threshold projection model (nbaThresholdProbability + buckets)
 │   ├── shared/
 │   │   ├── ui-atoms.jsx                        — Primitive UI components (HudCard, PlayerCard, Sparkline, OpsGauge, WeatherPill, TabLoader, etc.)
 │   │   ├── tabs/common-tabs.jsx                — Sport-agnostic tabs: OverviewTab, H2HTab, FormTab, RosterTab, AIPlaysTab
@@ -25,7 +25,7 @@ playiq/
 │   │       └── game-detail-screen.jsx          — GameDetailScreen + TABS_MLB / TABS_NBA / TABS_OTHER + Phase 1 / Phase 2 loading
 │   └── sports/
 │       ├── mlb/tabs.jsx                        — MLB-specific tabs: EdgeFinderTab, PitchingEdgeTab, LowHrModelTab, HighContactTab
-│       └── nba/tabs.jsx                        — NBA-specific tabs: NbaEdgeFinderTab, NbaLineupTab, NbaDefenseVsPositionTab
+│       └── nba/tabs.jsx                        — NBA-specific tabs: NbaEdgeFinderTab (incl. PROJECTION MODEL board: P(stat≥line) per player), NbaLineupTab, NbaDefenseVsPositionTab
 ├── manifest.json                               — PWA manifest
 ├── icon.svg                                    — PWA icon
 ├── server/

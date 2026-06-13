@@ -239,7 +239,13 @@ const server = http.createServer(async (req, res) => {
           position: pos || null,
           opponent: oppAbbr,
           points_allowed_per_48: row?.points_allowed_per_48 ?? null,
-          rank: row?.rank ?? null,
+          reb_allowed_per_48: row?.reb_per_48 ?? null,
+          ast_allowed_per_48: row?.ast_per_48 ?? null,
+          rank: row?.rank ?? null,                       // PTS rank (back-compat)
+          // Per-stat ranks (1 = toughest D, N = weakest) for the threshold model
+          ranks: row?.ranks
+            ? { pts: row.ranks.pts ?? null, reb: row.ranks.reb ?? null, ast: row.ranks.ast ?? null }
+            : null,
           signal: row?.signal ?? null,
           games_sampled: row?.games_sampled ?? 0,
         };
@@ -248,6 +254,7 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, {
         season: table.season,
         builtAt: table.builtAt,
+        total_rows: table.rows?.length ?? 150,           // rank denominator for the model
         away: { abbr: game.awayAbbr, status: game.away?.status, players: buildSide(game.away?.starters || [], game.homeAbbr) },
         home: { abbr: game.homeAbbr, status: game.home?.status, players: buildSide(game.home?.starters || [], game.awayAbbr) },
       });
