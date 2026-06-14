@@ -66,6 +66,27 @@ async function fetchLowHrReport(gameInfo, lineups, pitchers) {
   }
 }
 
+async function fetchMlbPropModel(gameInfo, lineups, pitchers) {
+  try {
+    const date = gameInfo.date ? gameInfo.date.slice(0, 10) : '';
+    const awayNames = (lineups?.away || []).map(b => b.name).join(',');
+    const homeNames = (lineups?.home || []).map(b => b.name).join(',');
+    const url = `${API_BASE}/api/mlb/prop-model`
+      + `?away=${encodeURIComponent(gameInfo.awayFull)}`
+      + `&home=${encodeURIComponent(gameInfo.homeFull)}`
+      + (date ? `&date=${date}` : '')
+      + (awayNames ? `&awayLineup=${encodeURIComponent(awayNames)}` : '')
+      + (homeNames ? `&homeLineup=${encodeURIComponent(homeNames)}` : '')
+      + (pitchers?.away?.name ? `&awayPitcher=${encodeURIComponent(pitchers.away.name)}` : '')
+      + (pitchers?.home?.name ? `&homePitcher=${encodeURIComponent(pitchers.home.name)}` : '');
+    const r = await fetch(url);
+    if (!r.ok) return null;
+    return await r.json();
+  } catch {
+    return null;
+  }
+}
+
 async function fetchWeather(gamePk) {
   try {
     const r = await fetch(`${API_BASE}/api/mlb/weather?gamePk=${gamePk}`);
@@ -232,7 +253,7 @@ async function fetchMlbStarters(gameInfo) {
 }
 
 Object.assign(window, {
-  fetchGameBvp, fetchWeather, fetchHighContactReport, fetchLowHrReport,
+  fetchGameBvp, fetchWeather, fetchHighContactReport, fetchLowHrReport, fetchMlbPropModel,
   fetchPlayerGameLog, attachWeatherToGameLog,
   buildMlbEdgeData, fetchMlbStarters, MLB_TEAM_ABBR,
 });

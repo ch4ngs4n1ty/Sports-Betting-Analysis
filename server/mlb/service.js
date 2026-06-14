@@ -1611,6 +1611,218 @@ async function getLowHrReport(gamePk, options = {}) {
   return result;
 }
 
+/* ── BATTER PROP PROJECTION MODEL (transparent) ─────────
+   Top-of-tab board for the MLB Edge Finder. For each hitter vs the opposing
+   starter, estimates P(Hits ≥ line), P(RBI ≥ line), P(K ≥ line) using Bill
+   James Log5 to combine batter & pitcher rates against league average, then a
+   Binomial (hits, K) / Poisson (RBI) tail over expected AB/PA. Rates are
+   shrunk to league mean by sample size and nudged by park, weather, platoon,
+   and a small sample-weighted BvP adjustment. No ML — every number is shown
+   in the UI's "how this is calculated" panel so it's verifiable. */
+
+const PROP_LINES = { hits: [0.5, 1.5], rbi: [0.5], k: [0.5, 1.5] };
+const LG = { avg: 0.245, kpa: 0.222, rbiG: 0.48, oppOps: 0.715, bf9: 38.3, whiff: 25 };
+
+const _r = (x, d) => x == null ? null : Math.round(x * 10 ** d) / 10 ** d;
+function _clampN(x, a, b) { return Math.max(a, Math.min(b, x)); }
+
+function log5(b, p, L) {
+  b = _clampN(b, 0.001, 0.999); p = _clampN(p, 0.001, 0.999);
+  const num = b * p / L;
+  return num / (num + (1 - b) * (1 - p) / (1 - L));
+}
+function binomTailGE(n, p, k) {
+  n = Math.max(1, Math.round(n)); p = _clampN(p, 0, 1);
+  let cdf = 0, comb = 1;
+  for (let i = 0; i < k; i++) {
+    if (i > 0) comb = comb * (n - i + 1) / i;
+    cdf += comb * Math.pow(p, i) * Math.pow(1 - p, n - i);
+  }
+  return _clampN(1 - cdf, 0, 1);
+}
+function poissonTailGE(lam, k) {
+  lam = Math.max(0, lam);
+  let cdf = 0, term = Math.exp(-lam);
+  for (let i = 0; i < k; i++) { if (i > 0) term = term * lam / i; cdf += term; }
+  return _clampN(1 - cdf, 0, 1);
+}
+
+// Batter season + last-15 hitting profile (for the prop model).
+async function getBatterHitProfile(batterId, season) {
+  if (!batterId) return null;
+  const cacheKey = `batter_hit_${batterId}_${season}`;
+  const cached = cacheGet(cacheKey);
+  if (cached) return cached;
+  try {
+    const data = await fetchJson(`${MLB_API}/people/${batterId}/stats?stats=season,gameLog&group=hitting&season=${season}`);
+    const byType = {};
+    for (const g of data?.stats || []) byType[g.type?.displayName || ''] = g.splits || [];
+    const st = byType.season?.[0]?.stat || {};
+    const pa = Number(st.plateAppearances || 0), ab = Number(st.atBats || 0), g = Number(st.gamesPlayed || 0);
+    const h = Number(st.hits || 0), k = Number(st.strikeOuts || 0), bb = Number(st.baseOnBalls || 0), rbi = Number(st.rbi || 0);
+    const logs = byType.gameLog || [];               // ascending by date
+    const last = logs.slice(-15);
+    const sv = (arr, key) => arr.reduce((s, x) => s + Number(x.stat?.[key] || 0), 0);
+    const l15ab = sv(last, 'atBats'), l15pa = sv(last, 'plateAppearances'), l15h = sv(last, 'hits'), l15k = sv(last, 'strikeOuts');
+    const result = {
+      season: {
+        pa, ab, g, h, k, bb, rbi,
+        avg: ab > 0 ? h / ab : null,
+        kPerPa: pa > 0 ? k / pa : null,
+        bbPerPa: pa > 0 ? bb / pa : null,
+        rbiPerG: g > 0 ? rbi / g : null,
+        abPerG: g > 0 ? ab / g : null,
+        paPerG: g > 0 ? pa / g : null,
+      },
+      recent: {
+        ab: l15ab, pa: l15pa, h: l15h, k: l15k,
+        hPerAb: l15ab > 0 ? l15h / l15ab : null,
+        kPerPa: l15pa > 0 ? l15k / l15pa : null,
+      },
+    };
+    cacheSet(cacheKey, result, 6 * 60 * 60 * 1000);
+    return result;
+  } catch { return null; }
+}
+
+// Batter handedness ('L' | 'R' | 'S') for platoon — cached a week.
+async function getBatterHand(batterId) {
+  if (!batterId) return null;
+  const cacheKey = `batter_hand_${batterId}`;
+  const cached = cacheGet(cacheKey);
+  if (cached) return cached;
+  try {
+    const data = await fetchJson(`${MLB_API}/people/${batterId}`);
+    const code = data?.people?.[0]?.batSide?.code || null;
+    if (code) cacheSet(cacheKey, code, 7 * 24 * 60 * 60 * 1000);
+    return code;
+  } catch { return null; }
+}
+
+function _arsenalWhiff(arsenal) {
+  if (!arsenal?.length) return null;
+  let u = 0, w = 0;
+  for (const p of arsenal) { if (p.whiffPct == null) continue; u += p.usage || 0; w += p.whiffPct * (p.usage || 0); }
+  return u > 0 ? w / u : null;
+}
+
+function computeBatterProps({ bp, pit, arsenal, weather, parkFactor, batHand, bvp }) {
+  const s = bp?.season || {};
+  const cur = pit?.current || {};
+  const throws = pit?.throws || cur.throws || null;
+
+  // Shrink batter & pitcher rates toward league mean by sample size.
+  const wB = s.pa > 0 ? s.pa / (s.pa + 100) : 0;
+  const battAvg = (s.avg != null ? wB * s.avg : 0) + (1 - wB) * LG.avg;
+  const battKpa = (s.kPerPa != null ? wB * s.kPerPa : 0) + (1 - wB) * LG.kpa;
+  const ip = cur.ip || 0, wP = ip / (ip + 50);
+  const pAvg = (cur.oppAvg != null ? wP * cur.oppAvg : 0) + (1 - wP) * LG.avg;
+  const pKpaRaw = (cur.k9 != null ? cur.k9 : LG.kpa * LG.bf9) / LG.bf9;
+  const pKpa = wP * pKpaRaw + (1 - wP) * LG.kpa;
+
+  // Context multipliers (small, clamped).
+  const platoonAdv = batHand === 'S' || (!!batHand && !!throws && batHand !== throws);
+  const dome = weather?.roofType && /indoor|closed|dome/i.test(weather.roofType);
+  const temp = weather?.temp, windStr = String(weather?.wind || '');
+  const windOut = /out|to (cf|rf|lf)/i.test(windStr), windIn = /\bin\b|from (cf|rf|lf)/i.test(windStr);
+  let wxOff = 1;
+  if (!dome) {
+    if (temp >= 80) wxOff += 0.02; else if (temp <= 50) wxOff -= 0.02;
+    if (windOut) wxOff += 0.02; else if (windIn) wxOff -= 0.02;
+  }
+  const pf = parkFactor == null ? 100 : parkFactor;
+  const parkHitMult = 1 + (pf - 100) * 0.0010;
+  const parkRbiMult = 1 + (pf - 100) * 0.0030;
+
+  // HITS — Log5(batter AVG, pitcher AVG-against, league), context, BvP nudge.
+  let pHit = log5(battAvg, pAvg, LG.avg) * parkHitMult * wxOff * (platoonAdv ? 1.04 : 0.96);
+  if (bvp && bvp.ab >= 10) { const w = Math.min(bvp.ab / 50, 0.3); pHit = (1 - w) * pHit + w * (bvp.hits / bvp.ab); }
+  pHit = _clampN(pHit, 0.01, 0.95);
+  const abExp = s.abPerG || 3.9;
+
+  // STRIKEOUTS — Log5(batter K/PA, pitcher K/PA, league), whiff + platoon, BvP.
+  let pK = log5(battKpa, pKpa, LG.kpa) * (platoonAdv ? 0.95 : 1.05);
+  const whiff = _arsenalWhiff(arsenal);
+  if (whiff != null) pK *= _clampN(whiff / LG.whiff, 0.85, 1.15);
+  if (bvp && bvp.pa >= 10) { const w = Math.min(bvp.pa / 50, 0.3); pK = (1 - w) * pK + w * (bvp.k / bvp.pa); }
+  pK = _clampN(pK, 0.01, 0.8);
+  const paExp = s.paPerG || 4.2;
+
+  // RBIs — Poisson on a run-environment-adjusted RBI/game rate.
+  const wG = s.g > 0 ? s.g / (s.g + 30) : 0;
+  let lam = (s.rbiPerG != null ? wG * s.rbiPerG : 0) + (1 - wG) * LG.rbiG;
+  const rbiPitMult = _clampN((cur.oppOps != null ? cur.oppOps : LG.oppOps) / LG.oppOps, 0.8, 1.25);
+  lam = Math.max(0.02, lam * rbiPitMult * parkRbiMult * wxOff);
+
+  return {
+    predictions: {
+      hits: { '0.5': binomTailGE(abExp, pHit, 1), '1.5': binomTailGE(abExp, pHit, 2) },
+      rbi: { '0.5': poissonTailGE(lam, 1) },
+      k: { '0.5': binomTailGE(paExp, pK, 1), '1.5': binomTailGE(paExp, pK, 2) },
+    },
+    inputs: {
+      hits: { battAvg: _r(battAvg, 3), pitchAvgAgainst: _r(pAvg, 3), pHit: _r(pHit, 3), abExp: _r(abExp, 2), parkMult: _r(parkHitMult, 3), wxMult: _r(wxOff, 3), platoonAdv },
+      k: { battKpa: _r(battKpa, 3), pitchKpa: _r(pKpa, 3), pK: _r(pK, 3), paExp: _r(paExp, 2), whiffPct: whiff != null ? _r(whiff, 1) : null },
+      rbi: { rbiPerG: s.rbiPerG != null ? _r(s.rbiPerG, 2) : null, lambda: _r(lam, 2), pitchMult: _r(rbiPitMult, 3) },
+    },
+    platoonAdv,
+  };
+}
+
+async function getBatterPropModel(gamePk, options = {}) {
+  const cacheKey = `props_${gamePk}`;
+  if (!options.refresh) { const c = cacheGet(cacheKey); if (c) return c; }
+
+  const season = currentMlbSeason();
+  const bvpData = await getGameBvp(gamePk, options);
+  const lineups = await getGameLineups(gamePk, options);
+  const weather = await fetchGameWeather(gamePk);
+  const parkFactor = parkHrFactor(weather?.venue);
+
+  const buildSide = async (side) => {
+    const oppSide = side === 'away' ? 'home' : 'away';
+    const team = lineups[side];
+    const oppPitcher = lineups[oppSide]?.probablePitcher;
+    if (!team?.lineup?.length || !oppPitcher) return [];
+    const [pit, arsenal] = await Promise.all([
+      getPitcherStats(oppPitcher.id, season),
+      getPitcherArsenal(oppPitcher.id, season),
+    ]);
+    const matchup = bvpData?.matchups?.find(m => m.side === side) || null;
+    const profiles = await Promise.all(team.lineup.map(b => Promise.all([getBatterHitProfile(b.id, season), getBatterHand(b.id)])));
+    return team.lineup.map((b, i) => {
+      const [bp, batHand] = profiles[i];
+      const bvpRow = matchup?.batters?.find(x => x.id === b.id)?.bvp || null;
+      const bvp = bvpRow && !bvpRow.error ? { ab: bvpRow.ab, hits: bvpRow.hits, k: bvpRow.k, pa: bvpRow.pa } : null;
+      const { predictions, inputs, platoonAdv } = computeBatterProps({ bp, pit, arsenal, weather, parkFactor, batHand, bvp });
+      const g = bp?.season?.g || 0;
+      return {
+        id: b.id, name: b.name, side, order: b.order, position: b.position,
+        pitcher: oppPitcher.name, pitcherThrows: pit?.throws || null,
+        predictions, inputs,
+        context: { bvpPa: bvp?.pa ?? 0, bvpH: bvp?.hits ?? 0, bvpK: bvp?.k ?? 0, platoonAdv, batHand },
+        games: g,
+        confidence: (g >= 40 && (bvp?.pa ?? 0) >= 10) ? 'HIGH' : g >= 15 ? 'MED' : 'LOW',
+      };
+    });
+  };
+
+  const [away, home] = await Promise.all([buildSide('away'), buildSide('home')]);
+  const result = {
+    gamePk, season,
+    lines: PROP_LINES,
+    park: { venue: weather?.venue || null, factor: parkFactor ?? null },
+    weather,
+    leagueRates: { avg: LG.avg, kPerPa: LG.kpa, rbiPerG: LG.rbiG },
+    away, home,
+    status: bvpData?.status || null,
+    source: 'Log5 matchup model · MLB Stats API season stats + Baseball Savant BvP/arsenal',
+    cachedAt: new Date().toISOString(),
+  };
+  cacheSet(cacheKey, result, LIVE_CACHE_TTL);
+  return result;
+}
+
 module.exports = {
   getGames,
   getGameLineups,
@@ -1622,4 +1834,5 @@ module.exports = {
   getHighContactReport,
   getLowHrReport,
   scoreF5,
+  getBatterPropModel,
 };

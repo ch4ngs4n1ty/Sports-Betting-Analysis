@@ -15,6 +15,7 @@ const {
   findGamePkByTeams,
   getHighContactReport,
   getLowHrReport,
+  getBatterPropModel,
 } = require('./mlb/service');
 const {
   getNbaStartingLineups,
@@ -154,6 +155,33 @@ const server = http.createServer(async (req, res) => {
       const awayPitcher = url.searchParams.get('awayPitcher') || undefined;
       const homePitcher = url.searchParams.get('homePitcher') || undefined;
       const report = await getLowHrReport(gamePk, { refresh, awayLineup, homeLineup, awayPitcher, homePitcher });
+      return sendJson(res, report);
+    }
+
+    // GET /api/mlb/prop-model?gamePk=... OR ?away=...&home=...&date=YYYY-MM-DD
+    //   Transparent batter-prop board: per hitter vs the opposing starter,
+    //   P(Hits/RBI/K ≥ line) via Log5 matchup rates + Binomial/Poisson tails,
+    //   with the full input breakdown for verification. Add &refresh=1.
+    if (path === '/api/mlb/prop-model') {
+      let gamePk = url.searchParams.get('gamePk');
+      if (!gamePk) {
+        const away = url.searchParams.get('away');
+        const home = url.searchParams.get('home');
+        const date = url.searchParams.get('date') || undefined;
+        if (!away || !home) return sendError(res, 'gamePk or away+home team names required');
+        gamePk = await findGamePkByTeams(away, home, date);
+        if (!gamePk) return sendError(res, `No game found for ${away} @ ${home}`, 404);
+      }
+      const refresh = url.searchParams.get('refresh') === '1';
+      const parseLineup = param => {
+        const v = url.searchParams.get(param);
+        return v ? v.split(',').map(s => s.trim()).filter(Boolean) : undefined;
+      };
+      const awayLineup = parseLineup('awayLineup');
+      const homeLineup = parseLineup('homeLineup');
+      const awayPitcher = url.searchParams.get('awayPitcher') || undefined;
+      const homePitcher = url.searchParams.get('homePitcher') || undefined;
+      const report = await getBatterPropModel(gamePk, { refresh, awayLineup, homeLineup, awayPitcher, homePitcher });
       return sendJson(res, report);
     }
 

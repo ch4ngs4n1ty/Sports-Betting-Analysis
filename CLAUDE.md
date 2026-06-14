@@ -24,7 +24,7 @@ playiq/
 │   │       ├── games-screen.jsx                — GamesScreen (today's games)
 │   │       └── game-detail-screen.jsx          — GameDetailScreen + TABS_MLB / TABS_NBA / TABS_OTHER + Phase 1 / Phase 2 loading
 │   └── sports/
-│       ├── mlb/tabs.jsx                        — MLB-specific tabs: EdgeFinderTab, PitchingEdgeTab, LowHrModelTab, HighContactTab
+│       ├── mlb/tabs.jsx                        — MLB-specific tabs: EdgeFinderTab (incl. PROP PROJECTION MODEL board: transparent Log5 P(Hits/RBI/K≥line)), PitchingEdgeTab, LowHrModelTab, HighContactTab
 │       └── nba/tabs.jsx                        — NBA-specific tabs: NbaEdgeFinderTab (incl. PROJECTION MODEL board: P(stat≥line) per player), NbaLineupTab, NbaDefenseVsPositionTab
 ├── manifest.json                               — PWA manifest
 ├── icon.svg                                    — PWA icon
@@ -32,7 +32,7 @@ playiq/
 │   ├── index.js                                — Node HTTP server (port 3001): routes to mlb/ and nba/ services
 │   ├── shared/{cache.js,http.js}               — In-memory cache + fetch helpers
 │   ├── index.js                                — Node HTTP server (also loads + scores the F5 model)
-│   ├── mlb/service.js                          — MLB Stats API + Baseball Savant: games, lineups, BvP, weather, high-contact report (pitcher stats + arsenal + splits + bullpen + scoring, each sub-score carries a `methodology` entry: source + exact endpoint + inputs + formula for verifiability), low-HR model, F5 money-line model (buildF5Features + scoreF5 zero-dep XGBoost tree-walker; folded into the high-contact report as `f5`)
+│   ├── mlb/service.js                          — MLB Stats API + Baseball Savant: games, lineups, BvP, weather, high-contact report (pitcher stats + arsenal + splits + bullpen + scoring, each sub-score carries a `methodology` entry: source + exact endpoint + inputs + formula for verifiability), low-HR model, F5 money-line model (buildF5Features + scoreF5 zero-dep XGBoost tree-walker; folded into the high-contact report as `f5`), batter-prop model (`getBatterPropModel`: transparent Log5 + Binomial/Poisson, served at `/api/mlb/prop-model` — no ML, computed live)
 │   ├── data/{f5_model.json,f5_feature_spec.json}  — F5 XGBoost model + feature contract (committed by CI; see ml/)
 │   ├── nba/{service.js,positional-defense.js,positions.js}  — NBA endpoints (lineups, def-vs-position)
 │   ├── package.json

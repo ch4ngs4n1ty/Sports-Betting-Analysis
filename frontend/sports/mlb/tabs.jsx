@@ -37,9 +37,23 @@ function shapeBvpForChart(gameByGame, pitcherName) {
   }));
 }
 
+const MLB_PROP_STAT_LABELS = { hits: 'HITS', rbi: 'RBI', k: 'STRIKEOUTS' };
+const MLB_PROP_LINES = { hits: [0.5, 1.5], rbi: [0.5], k: [0.5, 1.5] };
+
+function mlbPropColor(p) {
+  if (p == null) return 'var(--dim)';
+  if (p >= 0.70) return '#00ff88';
+  if (p >= 0.55) return '#ffd060';
+  if (p >= 0.45) return '#00d4ff';
+  return '#ff6b35';
+}
+
 function EdgeFinderTab({ gameData }) {
-  const { mlbEdgeData } = gameData;
+  const { mlbEdgeData, mlbPropModel, gameInfo } = gameData;
   const [filter, setFilter] = React.useState('all');
+  const [propStat, setPropStat] = React.useState('hits');
+  const [propLine, setPropLine] = React.useState(0.5);
+  const selectPropStat = s => { setPropStat(s); setPropLine(MLB_PROP_LINES[s][0]); };
 
   if (!mlbEdgeData) {
     if (gameData?._loading?.mlbEdgeData !== false) return <TabLoader source="Savant" label="Fetching BvP from Baseball Savant..." rows={5} />;
@@ -131,8 +145,140 @@ function EdgeFinderTab({ gameData }) {
     );
   };
 
+  // ── Batter-prop projection board (transparent Log5 model) ──
+  const MlbPropBoard = () => {
+    const [openId, setOpenId] = React.useState(null);
+    if (!mlbPropModel) {
+      if (gameData?._loading?.mlbPropModel !== false) return <TabLoader source="MLB Stats + Savant" label="Projecting batter props..." rows={4} />;
+      return null;
+    }
+    const all = [...(mlbPropModel.away || []), ...(mlbPropModel.home || [])]
+      .map(b => ({ ...b, prob: b.predictions?.[propStat]?.[String(propLine)] }))
+      .filter(b => b.prob != null)
+      .sort((a, b) => b.prob - a.prob);
+    const abbrFor = side => side === 'away' ? gameInfo.awayAbbr : gameInfo.homeAbbr;
+    const colorFor = side => side === 'away' ? 'var(--cyan)' : '#ffd060';
+    const fmtOdds = p => p == null ? '—' : p > 0.5 ? `-${Math.round(100 * p / (1 - p))}` : `+${Math.round(100 * (1 - p) / p)}`;
+    const park = mlbPropModel.park || {};
+    const wx = mlbPropModel.weather || {};
+
+    const InputChips = ({ b }) => {
+      const inp = b.inputs?.[propStat] || {};
+      const chips = propStat === 'hits'
+        ? [['batter AVG', inp.battAvg], ['pitcher AVG-against', inp.pitchAvgAgainst], ['→ P(hit)/AB', inp.pHit], ['exp AB', inp.abExp], ['park×', inp.parkMult], ['weather×', inp.wxMult]]
+        : propStat === 'k'
+        ? [['batter K/PA', inp.battKpa], ['pitcher K/PA', inp.pitchKpa], ['→ P(K)/PA', inp.pK], ['exp PA', inp.paExp], ['arsenal whiff%', inp.whiffPct]]
+        : [['batter RBI/G', inp.rbiPerG], ['pitcher run×', inp.pitchMult], ['→ λ (exp RBI)', inp.lambda]];
+      const formula = propStat === 'rbi'
+        ? 'Poisson: P(RBI ≥ line) = 1 − e^(−λ)'
+        : `Log5(batter, pitcher, league) → per-${propStat === 'hits' ? 'AB' : 'PA'} rate, then Binomial tail over expected ${propStat === 'hits' ? 'AB' : 'PA'}`;
+      return (
+        <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid rgba(255,255,255,0.04)', animation: 'fadeUp 0.2s ease' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 6 }}>
+            {chips.map(([l, v]) => (
+              <span key={l} style={{ fontSize: 8.5, fontFamily: 'Space Mono, monospace', color: 'var(--text)', padding: '2px 6px', background: 'rgba(255,255,255,0.03)', borderRadius: 2, border: '1px solid rgba(255,255,255,0.05)' }}>
+                <span style={{ color: 'var(--dim)' }}>{l} </span>{v == null ? '—' : v}
+              </span>
+            ))}
+            {b.context?.bvpPa > 0 && (
+              <span style={{ fontSize: 8.5, fontFamily: 'Space Mono, monospace', color: '#ffd060', padding: '2px 6px', background: 'rgba(255,208,96,0.08)', borderRadius: 2, border: '1px solid rgba(255,208,96,0.25)' }}>
+                BvP {b.context.bvpH}H/{b.context.bvpK}K in {b.context.bvpPa}PA
+              </span>
+            )}
+            <span style={{ fontSize: 8.5, fontFamily: 'Space Mono, monospace', color: b.context?.platoonAdv ? '#5ff5a5' : 'var(--dim)', padding: '2px 6px', borderRadius: 2, border: '1px solid rgba(255,255,255,0.05)' }}>
+              {b.context?.platoonAdv ? 'platoon edge' : 'no platoon edge'}
+            </span>
+          </div>
+          <div style={{ fontSize: 8.5, color: 'var(--muted)', fontFamily: 'Space Mono, monospace', lineHeight: 1.5 }}>
+            <span style={{ color: 'var(--dim)' }}>METHOD </span>{formula}
+          </div>
+        </div>
+      );
+    };
+
+    return (
+      <HudCard style={{ padding: '16px 18px', marginBottom: 20 }} accent="#00ff88">
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
+          <span style={{ fontSize: 12, fontFamily: 'Orbitron, monospace', fontWeight: 900, color: '#00ff88', letterSpacing: '0.12em' }}>◆ PROP PROJECTION MODEL</span>
+          <span style={{ fontSize: 9, fontFamily: 'Space Mono, monospace', color: 'var(--muted)', letterSpacing: '0.1em' }}>Log5 matchup · likelihood to hit the line</span>
+          <span style={{ marginLeft: 'auto', fontSize: 9, fontFamily: 'Space Mono, monospace', color: 'var(--dim)' }}>
+            {park.venue || ''}{park.factor != null ? ` · park ${park.factor}` : ''}{wx.temp != null ? ` · ${wx.temp}°` : ''}
+          </span>
+        </div>
+
+        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'center', marginBottom: 14 }}>
+          <div style={{ display: 'flex', gap: 5 }}>
+            {['hits', 'rbi', 'k'].map(s => (
+              <button key={s} onClick={() => selectPropStat(s)}
+                style={{ padding: '5px 13px', background: propStat === s ? 'rgba(0,255,136,0.12)' : 'transparent',
+                  border: `1px solid ${propStat === s ? 'rgba(0,255,136,0.4)' : 'rgba(255,255,255,0.08)'}`,
+                  color: propStat === s ? '#00ff88' : 'var(--muted)', fontFamily: 'Orbitron, monospace', fontWeight: 700,
+                  fontSize: 10, cursor: 'pointer', borderRadius: 2, letterSpacing: '0.08em' }}>{MLB_PROP_STAT_LABELS[s]}</button>
+            ))}
+          </div>
+          <div style={{ width: 1, height: 22, background: 'rgba(255,255,255,0.08)' }} />
+          <div style={{ display: 'flex', gap: 5 }}>
+            {MLB_PROP_LINES[propStat].map(line => (
+              <button key={line} onClick={() => setPropLine(line)}
+                style={{ padding: '5px 12px', background: propLine === line ? 'rgba(0,212,255,0.12)' : 'transparent',
+                  border: `1px solid ${propLine === line ? 'rgba(0,212,255,0.4)' : 'rgba(255,255,255,0.08)'}`,
+                  color: propLine === line ? 'var(--cyan)' : 'var(--dim)', fontFamily: 'Space Mono, monospace',
+                  fontSize: 10, cursor: 'pointer', borderRadius: 2 }}>{line}+</button>
+            ))}
+          </div>
+          <span style={{ marginLeft: 'auto', fontSize: 13, fontFamily: 'Orbitron, monospace', fontWeight: 700, color: 'var(--text)', letterSpacing: '0.06em' }}>
+            {propLine}+ {MLB_PROP_STAT_LABELS[propStat]}
+          </span>
+        </div>
+
+        {all.length ? (
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            {all.slice(0, 12).map((b, i) => {
+              const c = mlbPropColor(b.prob);
+              const pct = Math.round(b.prob * 100);
+              const tc = colorFor(b.side);
+              const isOpen = openId === b.id;
+              const confColor = b.confidence === 'HIGH' ? '#00ff88' : b.confidence === 'MED' ? '#ffd060' : 'var(--dim)';
+              return (
+                <div key={b.id || i} style={{ padding: '9px 10px', borderRadius: 3, background: i % 2 ? 'transparent' : 'rgba(255,255,255,0.02)' }}>
+                  <div onClick={() => setOpenId(isOpen ? null : b.id)} style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', cursor: 'pointer', userSelect: 'none' }}>
+                    <span style={{ width: 20, textAlign: 'center', fontSize: 14, fontFamily: 'Orbitron, monospace', fontWeight: 900, color: i === 0 ? '#00ff88' : i <= 2 ? 'var(--cyan)' : 'var(--dim)' }}>{i + 1}</span>
+                    <div style={{ flex: 1, minWidth: 150 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 13, fontFamily: 'Space Mono, monospace', color: 'var(--text)', fontWeight: 700 }}>{b.name}</span>
+                        <span style={{ fontSize: 8, padding: '1px 6px', border: `1px solid ${tc}66`, color: tc, fontFamily: 'Space Mono, monospace', borderRadius: 2 }}>{abbrFor(b.side)} #{b.order || '—'}</span>
+                      </div>
+                      <div style={{ fontSize: 9, color: 'var(--muted)', fontFamily: 'Space Mono, monospace', marginTop: 2 }}>
+                        vs {b.pitcher}{b.pitcherThrows ? ` (${b.pitcherThrows}HP)` : ''} · <span style={{ color: confColor }}>{b.confidence}</span>
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 180, flex: 1 }}>
+                      <div style={{ flex: 1, height: 8, background: 'rgba(255,255,255,0.05)', borderRadius: 4, overflow: 'hidden' }}>
+                        <div style={{ height: '100%', width: `${pct}%`, background: c, boxShadow: `0 0 8px ${c}88`, borderRadius: 4, transition: 'width 0.5s cubic-bezier(0.16,1,0.3,1)' }} />
+                      </div>
+                      <span style={{ width: 46, textAlign: 'right', fontSize: 17, fontFamily: 'Orbitron, monospace', fontWeight: 900, color: c }}>{pct}%</span>
+                      <span style={{ width: 48, textAlign: 'right', fontSize: 10, fontFamily: 'Space Mono, monospace', color: 'var(--muted)' }}>{fmtOdds(b.prob)}</span>
+                    </div>
+                  </div>
+                  {isOpen && <InputChips b={b} />}
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div style={{ fontSize: 10, color: 'var(--dim)', fontFamily: 'Space Mono, monospace', padding: '10px 0' }}>No batters to project yet — waiting on lineups.</div>
+        )}
+
+        <div style={{ fontSize: 9, color: 'var(--muted)', fontFamily: 'Space Mono, monospace', marginTop: 12, lineHeight: 1.6 }}>
+          Log5 blends each batter's rate with the pitcher's rate-allowed vs league, adjusted for park, weather, platoon, and BvP; Binomial (hits/K) or Poisson (RBI) over expected plate appearances. Tap a row to see the math. RBIs are inherently noisy — fair odds only, not a guarantee.
+        </div>
+      </HudCard>
+    );
+  };
+
   return (
     <div style={{ padding: '20px 0' }}>
+      <MlbPropBoard />
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18, flexWrap: 'wrap' }}>
         <div>
           <SectionHeader label="MLB EDGE FINDER" sub="L5 Season (H/HR/R/RBI/K/BB) · BvP Statcast (H/HR/K/BB) · Weather" />
