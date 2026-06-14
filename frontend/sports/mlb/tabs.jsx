@@ -241,6 +241,174 @@ function HighContactTab({ gameData }) {
     return 'LEAN PITCHER — under team total / pitcher K props / under hits-allowed.';
   };
 
+  // Render an input value compactly (trim trailing zeros on floats).
+  const formatInputVal = v => {
+    if (v == null) return '—';
+    if (typeof v === 'boolean') return v ? 'yes' : 'no';
+    if (typeof v === 'number') return Number.isInteger(v) ? String(v) : v.toFixed(3).replace(/\.?0+$/, '');
+    return String(v);
+  };
+
+  // Small caption under a data section showing where the numbers came from.
+  const SourceTag = ({ children }) => (
+    <span style={{ fontSize: 8, color: 'var(--dim)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.04em', textTransform: 'none' }}>
+      · src: {children}
+    </span>
+  );
+
+  // Collapsible provenance: per-parameter source + exact endpoint + the actual
+  // inputs used + the formula, so every score can be independently verified.
+  const MethodologyPanel = ({ side }) => {
+    const [open, setOpen] = React.useState(false);
+    const meth = side.methodology || [];
+    if (!meth.length) return null;
+    return (
+      <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid rgba(255,255,255,0.04)' }}>
+        <div onClick={() => setOpen(o => !o)} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 7, userSelect: 'none' }}>
+          <span style={{ fontSize: 12, color: 'var(--cyan)', display: 'inline-block', transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s' }}>▸</span>
+          <span style={{ fontSize: 9, color: 'var(--cyan)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.18em', fontWeight: 700 }}>METHODOLOGY & SOURCES</span>
+          <span style={{ fontSize: 8, color: 'var(--dim)', fontFamily: 'Space Mono, monospace' }}>· verify every number</span>
+        </div>
+        {open && (
+          <div style={{ marginTop: 10, animation: 'fadeUp 0.25s ease', display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {meth.map(m => {
+              const c = riskColor(m.score);
+              return (
+                <div key={m.key} style={{ padding: '10px 12px', background: 'var(--surface)', borderRadius: 3, border: '1px solid rgba(255,255,255,0.04)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6, flexWrap: 'wrap', gap: 6 }}>
+                    <span style={{ fontSize: 10, fontFamily: 'Space Mono, monospace', color: 'var(--text)', fontWeight: 700, letterSpacing: '0.08em' }}>
+                      {m.label} <span style={{ color: 'var(--dim)', fontWeight: 400 }}>· weight {Math.round(m.weight * 100)}%</span>
+                    </span>
+                    <span style={{ fontSize: 11, fontFamily: 'Orbitron, monospace', color: c, fontWeight: 700 }}>
+                      {m.score != null ? `score ${m.score}` : 'N/A'}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 9, fontFamily: 'Space Mono, monospace', color: 'var(--muted)', marginBottom: 3 }}>
+                    <span style={{ color: 'var(--dim)' }}>SOURCE </span>{m.source}
+                  </div>
+                  <div style={{ fontSize: 8.5, fontFamily: 'Space Mono, monospace', color: 'var(--cyan)', wordBreak: 'break-all', marginBottom: 6, lineHeight: 1.5 }}>
+                    {m.endpoint}
+                  </div>
+                  {m.inputs && Object.keys(m.inputs).length > 0 && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 6 }}>
+                      {Object.entries(m.inputs).map(([k, v]) => (
+                        <span key={k} style={{ fontSize: 8.5, fontFamily: 'Space Mono, monospace', color: 'var(--text)', padding: '2px 6px', background: 'rgba(255,255,255,0.03)', borderRadius: 2, border: '1px solid rgba(255,255,255,0.05)' }}>
+                          <span style={{ color: 'var(--dim)' }}>{k}=</span>{formatInputVal(v)}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {m.formula && (
+                    <div style={{ fontSize: 8.5, fontFamily: 'Space Mono, monospace', color: 'var(--muted)', lineHeight: 1.55 }}>
+                      <span style={{ color: 'var(--dim)' }}>CALC </span>{m.formula}
+                    </div>
+                  )}
+                  {m.note && (
+                    <div style={{ fontSize: 8.5, fontFamily: 'Space Mono, monospace', color: '#ff8a55', lineHeight: 1.55, marginTop: m.formula ? 4 : 0 }}>
+                      <span style={{ color: 'var(--dim)' }}>NOTE </span>{m.note} → excluded, weights renormalized
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            {highContactData.riskFormula && (
+              <div style={{ fontSize: 8.5, fontFamily: 'Space Mono, monospace', color: 'var(--muted)', lineHeight: 1.6, padding: '8px 10px', background: 'rgba(0,212,255,0.04)', borderRadius: 3, border: '1px solid rgba(0,212,255,0.12)' }}>
+                <span style={{ color: 'var(--cyan)' }}>COMPOSITE </span>{highContactData.riskFormula}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // First-5-innings money-line model (XGBoost) — top-of-tab projection card.
+  const F5MoneyLineCard = () => {
+    const [open, setOpen] = React.useState(false);
+    const f5 = highContactData.f5;
+    if (!f5) {
+      return (
+        <HudCard style={{ padding: '14px 18px', marginBottom: 14 }} accent="var(--dim)">
+          <div style={{ fontSize: 10, fontFamily: 'Space Mono, monospace', color: 'var(--dim)', letterSpacing: '0.08em' }}>
+            ◆ F5 MONEY LINE MODEL — unavailable (model not trained yet, or starters unconfirmed)
+          </div>
+        </HudCard>
+      );
+    }
+    const aw = gameInfo.awayAbbr, hm = gameInfo.homeAbbr;
+    const fmtOdds = o => o == null ? '—' : o > 0 ? `+${o}` : `${o}`;
+    const fmtNum = (v, d = 4) => v == null ? '—' : Number(v).toFixed(d);
+    const rows = [
+      { key: 'away', label: aw, p: f5.probs.away, odds: f5.fairOdds.away, color: 'var(--cyan)' },
+      { key: 'tie', label: 'TIE', p: f5.probs.tie, odds: f5.fairOdds.tie, color: 'var(--muted)' },
+      { key: 'home', label: hm, p: f5.probs.home, odds: f5.fairOdds.home, color: '#ffd060' },
+    ];
+    const pickLabel = f5.pick === 'home' ? hm : f5.pick === 'away' ? aw : 'TIE';
+    const val = f5.model?.val || {};
+    return (
+      <HudCard style={{ padding: '16px 18px', marginBottom: 14 }} accent="#00ff88">
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
+          <span style={{ fontSize: 12, fontFamily: 'Orbitron, monospace', fontWeight: 900, color: '#00ff88', letterSpacing: '0.12em' }}>◆ F5 MONEY LINE MODEL</span>
+          <span style={{ fontSize: 9, fontFamily: 'Space Mono, monospace', color: 'var(--muted)', letterSpacing: '0.1em' }}>XGBoost · who leads after 5 innings</span>
+          {val.home_away_auc != null && (
+            <span style={{ marginLeft: 'auto', fontSize: 9, fontFamily: 'Space Mono, monospace', color: 'var(--dim)' }}>val AUC {val.home_away_auc.toFixed(3)}</span>
+          )}
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {rows.map(r => {
+            const pct = Math.round(r.p * 100);
+            const isPick = f5.pick === r.key;
+            return (
+              <div key={r.key} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <span style={{ width: 50, fontSize: 12, fontFamily: 'Orbitron, monospace', fontWeight: 700, color: r.color }}>{r.label}</span>
+                <div style={{ flex: 1, height: 10, background: 'rgba(255,255,255,0.05)', borderRadius: 5, overflow: 'hidden' }}>
+                  <div style={{ height: '100%', width: `${pct}%`, background: r.color, boxShadow: `0 0 8px ${r.color}88`, borderRadius: 5, transition: 'width 0.6s cubic-bezier(0.16,1,0.3,1)' }} />
+                </div>
+                <span style={{ width: 44, textAlign: 'right', fontSize: 16, fontFamily: 'Orbitron, monospace', fontWeight: 900, color: r.color }}>{pct}%</span>
+                <span style={{ width: 50, textAlign: 'right', fontSize: 10, fontFamily: 'Space Mono, monospace', color: 'var(--muted)' }}>{fmtOdds(r.odds)}</span>
+                <span style={{ width: 56, fontSize: 8, color: '#00ff88', fontFamily: 'Orbitron, monospace', fontWeight: 700, letterSpacing: '0.1em' }}>{isPick ? '◄ PICK' : ''}</span>
+              </div>
+            );
+          })}
+        </div>
+
+        <div style={{ marginTop: 10, fontSize: 10, fontFamily: 'Space Mono, monospace', color: 'var(--text)', lineHeight: 1.5 }}>
+          Model lean: <span style={{ color: '#00ff88', fontWeight: 700 }}>{pickLabel} F5</span> at {Math.round(f5.probs[f5.pick] * 100)}% (fair {fmtOdds(f5.fairOdds[f5.pick])}).
+          <span style={{ color: 'var(--muted)' }}> Compare to the book's F5 line — only bet when it pays more than fair.</span>
+        </div>
+
+        <div style={{ marginTop: 10, paddingTop: 8, borderTop: '1px solid rgba(255,255,255,0.04)' }}>
+          <div onClick={() => setOpen(o => !o)} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 7, userSelect: 'none' }}>
+            <span style={{ fontSize: 12, color: 'var(--cyan)', display: 'inline-block', transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s' }}>▸</span>
+            <span style={{ fontSize: 9, color: 'var(--cyan)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.16em', fontWeight: 700 }}>MODEL DETAILS & FEATURES</span>
+          </div>
+          {open && (
+            <div style={{ marginTop: 10, animation: 'fadeUp 0.25s ease' }}>
+              <div style={{ fontSize: 9, fontFamily: 'Space Mono, monospace', color: 'var(--muted)', marginBottom: 8, lineHeight: 1.7 }}>
+                <span style={{ color: 'var(--dim)' }}>SOURCE </span>{f5.source}<br />
+                <span style={{ color: 'var(--dim)' }}>VALIDATION ({val.split || '—'}) </span>
+                log-loss {fmtNum(val.log_loss)} vs base {fmtNum(val.base_rate_log_loss)} / logistic {fmtNum(val.logistic_log_loss)}
+                {val.accuracy != null && ` · acc ${(val.accuracy * 100).toFixed(1)}%`}
+                {val.home_away_auc != null && ` · home/away AUC ${val.home_away_auc.toFixed(3)}`}
+                {val.n_val != null && ` · n=${val.n_val}`}<br />
+                <span style={{ color: 'var(--dim)' }}>MODEL </span>{f5.model?.nTrees} trees · trained {f5.model?.trainedAt ? String(f5.model.trainedAt).slice(0, 10) : '—'}
+              </div>
+              <div style={{ fontSize: 8.5, color: 'var(--dim)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.12em', marginBottom: 6 }}>FEATURE VECTOR (entering this game)</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                {Object.entries(f5.features).map(([k, v]) => (
+                  <span key={k} style={{ fontSize: 8.5, fontFamily: 'Space Mono, monospace', color: 'var(--text)', padding: '2px 6px', background: 'rgba(255,255,255,0.03)', borderRadius: 2, border: '1px solid rgba(255,255,255,0.05)' }}>
+                    <span style={{ color: 'var(--dim)' }}>{k}=</span>{formatInputVal(v)}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </HudCard>
+    );
+  };
+
   const PitcherRiskCard = ({ side, color, abbr }) => {
     if (!side?.pitcher) {
       return (
@@ -277,7 +445,7 @@ function HighContactTab({ gameData }) {
         </div>
 
         <div style={{ paddingTop: 12, borderTop: '1px solid rgba(255,255,255,0.04)', marginBottom: 12 }}>
-          <div style={{ fontSize: 9, color: 'var(--dim)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.18em', marginBottom: 8 }}>BREAKDOWN</div>
+          <div style={{ fontSize: 9, color: 'var(--dim)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.18em', marginBottom: 8 }}>BREAKDOWN <SourceTag>sources + math below ▾</SourceTag></div>
           {SUB_ORDER.map(key => {
             const raw = subs[key];
             const w = weights[key] || 0;
@@ -304,7 +472,7 @@ function HighContactTab({ gameData }) {
         </div>
 
         <div style={{ paddingTop: 12, borderTop: '1px solid rgba(255,255,255,0.04)', marginBottom: 12 }}>
-          <div style={{ fontSize: 9, color: 'var(--dim)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.18em', marginBottom: 8 }}>PITCHER · CURRENT vs PREV</div>
+          <div style={{ fontSize: 9, color: 'var(--dim)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.18em', marginBottom: 8 }}>PITCHER · CURRENT vs PREV <SourceTag>MLB Stats API</SourceTag></div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6 }}>
             {[
               ['ERA',   cur.era,    prev.era,    v => v != null ? Number(v).toFixed(2) : '—'],
@@ -328,7 +496,7 @@ function HighContactTab({ gameData }) {
         {side.arsenal?.length > 0 && (
           <div style={{ paddingTop: 12, borderTop: '1px solid rgba(255,255,255,0.04)', marginBottom: 12 }}>
             <div style={{ fontSize: 9, color: 'var(--dim)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.18em', marginBottom: 8 }}>
-              ARSENAL · TOP {Math.min(side.arsenal.length, 5)} PITCHES
+              ARSENAL · TOP {Math.min(side.arsenal.length, 5)} PITCHES <SourceTag>Baseball Savant · Statcast</SourceTag>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
               {side.arsenal.slice(0, 5).map((p, i) => {
@@ -357,7 +525,7 @@ function HighContactTab({ gameData }) {
         {side.oppHandSplits && (
           <div style={{ paddingTop: 12, borderTop: '1px solid rgba(255,255,255,0.04)', marginBottom: 12 }}>
             <div style={{ fontSize: 9, color: 'var(--dim)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.18em', marginBottom: 8 }}>
-              {side.opponent ? side.opponent.toUpperCase() : 'OPP'} vs {side.pitcher.throws === 'L' ? 'LHP' : 'RHP'}
+              {side.opponent ? side.opponent.toUpperCase() : 'OPP'} vs {side.pitcher.throws === 'L' ? 'LHP' : 'RHP'} <SourceTag>MLB Stats API · statSplits</SourceTag>
             </div>
             {(() => {
               const sp = side.pitcher.throws === 'L' ? side.oppHandSplits.vsL : side.oppHandSplits.vsR;
@@ -381,7 +549,7 @@ function HighContactTab({ gameData }) {
         <div style={{ paddingTop: 12, borderTop: '1px solid rgba(255,255,255,0.04)', display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center', marginBottom: 12 }}>
           {side.bullpen ? (
             <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-              <span style={{ fontSize: 9, color: 'var(--dim)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.15em' }}>BULLPEN</span>
+              <span style={{ fontSize: 9, color: 'var(--dim)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.15em' }}>BULLPEN <SourceTag>MLB Stats API</SourceTag></span>
               <span style={{ fontSize: 11, fontFamily: 'Space Mono, monospace', color: 'var(--text)', fontWeight: 700 }}>
                 {side.bullpen.era != null ? side.bullpen.era.toFixed(2) : '—'} ERA
               </span>
@@ -422,6 +590,8 @@ function HighContactTab({ gameData }) {
             );
           })}
         </div>
+
+        <MethodologyPanel side={side} />
       </HudCard>
     );
   };
@@ -430,8 +600,9 @@ function HighContactTab({ gameData }) {
     <div style={{ padding: '20px 0' }}>
       <SectionHeader
         label="HIGH-CONTACT PITCHING"
-        sub="Weighted hit-risk score · WHIP + arsenal xwOBA + opp-vs-hand + lineup BvP + weather"
+        sub="Weighted hit-risk score · MLB Stats API + Baseball Savant · expand METHODOLOGY on each card to verify every number"
       />
+      <F5MoneyLineCard />
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))', gap: 12 }}>
         <PitcherRiskCard side={highContactData.away} color="var(--cyan)" abbr={gameInfo.awayAbbr} />
         <PitcherRiskCard side={highContactData.home} color="#ffd060" abbr={gameInfo.homeAbbr} />

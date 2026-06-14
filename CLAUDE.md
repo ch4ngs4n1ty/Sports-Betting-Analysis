@@ -31,11 +31,19 @@ playiq/
 ├── server/
 │   ├── index.js                                — Node HTTP server (port 3001): routes to mlb/ and nba/ services
 │   ├── shared/{cache.js,http.js}               — In-memory cache + fetch helpers
-│   ├── mlb/service.js                          — MLB Stats API + Baseball Savant: games, lineups, BvP, weather, high-contact report (pitcher stats + arsenal + splits + bullpen + scoring), low-HR model (HR/9 board + no-HR rates + park/wind + 13-pt slip scoring)
+│   ├── index.js                                — Node HTTP server (also loads + scores the F5 model)
+│   ├── mlb/service.js                          — MLB Stats API + Baseball Savant: games, lineups, BvP, weather, high-contact report (pitcher stats + arsenal + splits + bullpen + scoring, each sub-score carries a `methodology` entry: source + exact endpoint + inputs + formula for verifiability), low-HR model, F5 money-line model (buildF5Features + scoreF5 zero-dep XGBoost tree-walker; folded into the high-contact report as `f5`)
+│   ├── data/{f5_model.json,f5_feature_spec.json}  — F5 XGBoost model + feature contract (committed by CI; see ml/)
 │   ├── nba/{service.js,positional-defense.js,positions.js}  — NBA endpoints (lineups, def-vs-position)
 │   ├── package.json
 │   ├── start.sh                                — Kills any existing :3001 process, starts server in background, logs to server.log
 │   └── server.log
+├── ml/                                         — OFFLINE XGBoost pipeline for the F5 model (Python; runs in CI, not in the app)
+│   ├── f5_common.py                            — shared feature order + park table + fallbacks (parity contract)
+│   ├── collect_mlb_f5.py                       — builds leak-free dataset from MLB schedule + pitcher game logs
+│   ├── train_f5.py                             — trains XGBoost multi:softprob, exports full-precision trees + parity samples
+│   └── README.md                               — how the pipeline + CI automation work
+├── .github/workflows/train-f5.yml             — weekly retrain → commit model → Render autoDeploy
 └── CLAUDE.md                                   — This file
 ```
 
@@ -184,6 +192,17 @@ For any legacy code that calls `window.claude.complete(prompt)`, `data-layer.js`
 - Internal caches: 2-min for live MLB, 15-min for historical BvP (max 500 entries, LRU eviction)
 
 **Rule: maintain the backend's current shape.** Add new endpoints rather than mutating existing ones, and keep it dependency-free.
+
+---
+
+## Machine Learning (F5 money-line model)
+
+The only ML model in the app. Predicts the **first-5-innings money line** (3-way: home/tie/away leads after 5), shown atop the MLB **High Contact** tab via `F5MoneyLineCard`.
+
+- **Trained offline** with real XGBoost in `ml/` (Python), **never in the app**. GitHub Actions retrains weekly and commits `server/data/f5_model.json`; Render auto-deploys. The user never runs Python.
+- **Scored live, zero-dep**: `scoreF5()` in `server/mlb/service.js` walks the exported trees (full-precision, round-robin tree→class + per-class `base_margin`, softmax) — no ML library in the runtime.
+- **Train/serve parity is load-bearing**: features are defined once (`ml/f5_common.py` ↔ `server/data/f5_feature_spec.json`) and must be computed identically by `collect_mlb_f5.py` (historical) and `buildF5Features()` (live). `train_f5.py` embeds `parity_samples` so the Node scorer can self-check (expect ~1e-7). If you change a feature, change BOTH sides and retrain.
+- Don't add an ML dependency to the Node app or a build step. Keep training in `ml/`. See `ml/README.md`.
 
 ---
 

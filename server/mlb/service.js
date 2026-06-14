@@ -1,3 +1,5 @@
+const fs = require('fs');
+const path = require('path');
 const { cacheGet, cacheSet, CACHE_TTL, LIVE_CACHE_TTL } = require('../shared/cache');
 const { fetchUrl, fetchJson } = require('../shared/http');
 
@@ -727,11 +729,13 @@ async function getBullpenStats(teamId, season) {
 /* ── Risk scoring ─────────────────────────────────────── */
 function clamp(n, min, max) { return Math.max(min, Math.min(max, n)); }
 
-// All sub-scores normalized to 0-100 (higher = more hit risk).
+// All sub-scores normalized to 0-100 (higher = more hit risk). Each scorer
+// returns { score, inputs, formula, note } so the exact numbers and method
+// that produced the score travel with it (verifiable + can't drift from code).
 function scorePitcherTraffic(stats) {
   // WHIP and H/9 are the load-bearing stats. K% reduces traffic.
   const cur = stats?.current;
-  if (!cur || cur.whip == null) return null;
+  if (!cur || cur.whip == null) return { score: null, inputs: {}, note: 'no current-season pitching line' };
   const whip = cur.whip;
   const h9 = cur.h9 ?? 8.5;
   const k9 = cur.k9 ?? 8.5;
@@ -739,79 +743,113 @@ function scorePitcherTraffic(stats) {
   const whipScore = clamp((whip - 1.10) / (1.60 - 1.10) * 100, 0, 100);
   const h9Score   = clamp((h9 - 7.0) / (11.0 - 7.0) * 100, 0, 100);
   const k9Score   = clamp((11.0 - k9) / (11.0 - 5.0) * 100, 0, 100);
-  return Math.round(whipScore * 0.5 + h9Score * 0.35 + k9Score * 0.15);
+  return {
+    score: Math.round(whipScore * 0.5 + h9Score * 0.35 + k9Score * 0.15),
+    inputs: {
+      WHIP: whip, 'H/9': h9, 'K/9': k9,
+      whipScore: Math.round(whipScore), h9Score: Math.round(h9Score), k9Score: Math.round(k9Score),
+    },
+    formula: 'WHIP[1.10→0,1.60→100]×0.50 + H9[7→0,11→100]×0.35 + K9[11→0,5→100, inverted]×0.15',
+  };
 }
 
 function scorePitchTypeWeakness(arsenal) {
-  if (!arsenal?.length) return null;
+  if (!arsenal?.length) return { score: null, inputs: {}, note: 'no arsenal rows returned' };
   // Weighted by usage. xwOBA league avg ≈ 0.310. .280 → 0, .400 → 100.
-  let usageSum = 0, weightedXwoba = 0, worstXwoba = 0;
+  let usageSum = 0, weightedXwoba = 0, worstXwoba = 0, worstPitch = null;
   for (const p of arsenal) {
     const u = p.usage || 0;
     if (p.xwoba == null) continue;
     usageSum += u;
     weightedXwoba += p.xwoba * u;
-    if (u >= 10 && p.xwoba > worstXwoba) worstXwoba = p.xwoba;
+    if (u >= 10 && p.xwoba > worstXwoba) { worstXwoba = p.xwoba; worstPitch = p.name || p.type; }
   }
-  if (usageSum < 50) return null;
+  if (usageSum < 50) return { score: null, inputs: { usageCoveragePct: Math.round(usageSum) }, note: 'xwOBA usage coverage < 50% (insufficient Savant rows)' };
   const wXwoba = weightedXwoba / usageSum;
   const wScore = clamp((wXwoba - 0.280) / (0.400 - 0.280) * 100, 0, 100);
   const worstScore = worstXwoba ? clamp((worstXwoba - 0.300) / (0.430 - 0.300) * 100, 0, 100) : 0;
   // Blend the weighted-average pitch quality with the single worst high-usage pitch.
-  return Math.round(wScore * 0.65 + worstScore * 0.35);
+  return {
+    score: Math.round(wScore * 0.65 + worstScore * 0.35),
+    inputs: {
+      usageWeightedXwoba: Math.round(wXwoba * 1000) / 1000,
+      worstHighUsagePitch: worstPitch,
+      worstPitchXwoba: worstXwoba || null,
+      pitchesCounted: arsenal.length,
+    },
+    formula: 'usage-weighted xwOBA[.280→0,.400→100]×0.65 + worst ≥10%-usage pitch xwOBA[.300→0,.430→100]×0.35',
+  };
 }
 
 function scoreOppVsHand(teamSplits, throws) {
-  if (!teamSplits || !throws) return null;
+  if (!teamSplits || !throws) return { score: null, inputs: {}, note: 'missing team splits or pitcher hand' };
   const side = throws === 'L' ? teamSplits.vsL : teamSplits.vsR;
-  if (!side || side.ops == null) return null;
+  if (!side || side.ops == null) return { score: null, inputs: {}, note: `no opponent split vs ${throws}HP` };
   // OPS .650 → 0, .850 → 100.
-  return Math.round(clamp((side.ops - 0.650) / (0.850 - 0.650) * 100, 0, 100));
+  return {
+    score: Math.round(clamp((side.ops - 0.650) / (0.850 - 0.650) * 100, 0, 100)),
+    inputs: { vsHand: throws === 'L' ? 'LHP' : 'RHP', OPS: side.ops, AVG: side.avg, OBP: side.obp, SLG: side.slg },
+    formula: 'team OPS vs this pitcher hand [.650→0, .850→100]',
+  };
 }
 
 function scoreLineupStrength(lineupBvp) {
   // lineupBvp = { avgOps, samplePa, batters: [{ops, pa}, ...] }
   // Without team-vs-hand-individualized hitter OPS we proxy lineup strength
   // by the lineup's BvP OPS against this exact pitcher (richer than season OPS).
-  if (!lineupBvp || !lineupBvp.batters?.length) return null;
+  if (!lineupBvp || !lineupBvp.batters?.length) return { score: null, inputs: {}, note: 'no BvP batters' };
   const opsList = lineupBvp.batters.map(b => b.ops).filter(v => v != null);
-  if (!opsList.length) return null;
+  if (!opsList.length) return { score: null, inputs: {}, note: 'no batter OPS vs this pitcher' };
   const avgOps = opsList.reduce((a, b) => a + b, 0) / opsList.length;
-  return Math.round(clamp((avgOps - 0.500) / (1.000 - 0.500) * 100, 0, 100));
+  return {
+    score: Math.round(clamp((avgOps - 0.500) / (1.000 - 0.500) * 100, 0, 100)),
+    inputs: { avgLineupBvpOps: Math.round(avgOps * 1000) / 1000, battersWithBvp: opsList.length, totalBvpPa: lineupBvp.samplePa },
+    formula: 'mean of each batter\'s career OPS vs this exact pitcher [.500→0, 1.000→100]',
+  };
 }
 
 function scoreWeather(weather) {
-  if (!weather) return null;
+  if (!weather) return { score: null, inputs: {}, note: 'no weather feed' };
   // Domes neutralize wind/temp; assume park-average baseline.
-  if (weather.roofType && /indoor|closed|dome/i.test(weather.roofType)) return 50;
+  if (weather.roofType && /indoor|closed|dome/i.test(weather.roofType)) {
+    return { score: 50, inputs: { roofType: weather.roofType }, formula: 'roof closed / indoor → neutral 50' };
+  }
   const temp = weather.temp;
   const windStr = String(weather.wind || '');
   const windMph = parseInt(windStr) || 0;
   const blowingOut = /out|to (cf|rf|lf)/i.test(windStr);
   const blowingIn  = /in|from (cf|rf|lf)/i.test(windStr);
-  let score = 50;
+  let tempAdj = 0, windAdj = 0;
   if (temp != null) {
-    if (temp >= 85) score += 18;
-    else if (temp >= 75) score += 10;
-    else if (temp <= 50) score -= 18;
-    else if (temp <= 60) score -= 8;
+    if (temp >= 85) tempAdj = 18;
+    else if (temp >= 75) tempAdj = 10;
+    else if (temp <= 50) tempAdj = -18;
+    else if (temp <= 60) tempAdj = -8;
   }
-  if (blowingOut) score += Math.min(20, windMph * 1.5);
-  if (blowingIn)  score -= Math.min(20, windMph * 1.5);
-  return Math.round(clamp(score, 0, 100));
+  if (blowingOut) windAdj = Math.min(20, windMph * 1.5);
+  if (blowingIn)  windAdj = -Math.min(20, windMph * 1.5);
+  return {
+    score: Math.round(clamp(50 + tempAdj + windAdj, 0, 100)),
+    inputs: { temp, wind: weather.wind || null, tempAdj, windAdj },
+    formula: 'base 50 + temp[≥85:+18, ≥75:+10, ≤60:−8, ≤50:−18] + wind[out:+min(20,mph×1.5), in:−min(20,mph×1.5)]',
+  };
 }
 
 function scoreBvP(lineupBvp) {
-  if (!lineupBvp || !lineupBvp.batters?.length) return null;
+  if (!lineupBvp || !lineupBvp.batters?.length) return { score: null, inputs: {}, note: 'no BvP batters' };
   const opsList = lineupBvp.batters.map(b => b.ops).filter(v => v != null);
   const paList  = lineupBvp.batters.map(b => b.pa).filter(v => v != null);
-  if (!opsList.length) return null;
+  if (!opsList.length) return { score: null, inputs: {}, note: 'no batter OPS vs this pitcher' };
   const totalPa = paList.reduce((a, b) => a + b, 0);
   // Confidence shrinks if total PA is small (< 60 PA across whole lineup).
   const conf = clamp(totalPa / 60, 0.2, 1.0);
   const avgOps = opsList.reduce((a, b) => a + b, 0) / opsList.length;
   const raw = clamp((avgOps - 0.500) / (1.000 - 0.500) * 100, 0, 100);
-  return Math.round(raw * conf + 50 * (1 - conf));
+  return {
+    score: Math.round(raw * conf + 50 * (1 - conf)),
+    inputs: { avgBvpOps: Math.round(avgOps * 1000) / 1000, totalBvpPa: totalPa, confidence: Math.round(conf * 100) / 100 },
+    formula: 'rawOPS[.500→0,1.000→100] shrunk toward 50 by confidence = min(1, totalPA/60)',
+  };
 }
 
 const HC_WEIGHTS = {
@@ -852,6 +890,123 @@ function summarizeLineupBvp(matchup) {
   const opsList = batters.map(b => b.ops).filter(v => v != null);
   const avgOps = opsList.length ? opsList.reduce((a, b) => a + b, 0) / opsList.length : null;
   return { batters, samplePa: totalPa, avgOps: avgOps != null ? Math.round(avgOps * 1000) / 1000 : null };
+}
+
+/* ── FIRST-5-INNINGS (F5) MONEY LINE MODEL ──────────────
+   Scores the XGBoost model trained offline by ml/train_f5.py (committed as
+   server/data/f5_model.json). Pure-JS tree-walker, zero deps. Features are
+   assembled with the SAME formulas as ml/collect_mlb_f5.py — see
+   server/data/f5_feature_spec.json (the parity contract). Outputs P(home /
+   tie / away leads after 5 innings). Returns null if the model isn't present. */
+
+let _f5Model = null, _f5Spec = null, _f5Loaded = false;
+function loadF5() {
+  if (_f5Loaded) return;
+  _f5Loaded = true;
+  try {
+    const dir = path.join(__dirname, '..', 'data');
+    _f5Model = JSON.parse(fs.readFileSync(path.join(dir, 'f5_model.json'), 'utf8'));
+    _f5Spec = JSON.parse(fs.readFileSync(path.join(dir, 'f5_feature_spec.json'), 'utf8'));
+    // Flatten each tree to a nodeid→node map once for O(depth) traversal.
+    for (const t of _f5Model.trees) {
+      const map = {};
+      (function flat(n) { map[n.nodeid] = n; (n.children || []).forEach(flat); })(t);
+      t.__map = map;
+    }
+  } catch { _f5Model = null; _f5Spec = null; }
+}
+
+function _f5Leaf(tree, feats) {
+  let node = tree;
+  while (!('leaf' in node)) {
+    const v = feats[node.split];
+    const nextId = (v == null || Number.isNaN(v)) ? node.missing
+      : (v < node.split_condition ? node.yes : node.no);
+    node = tree.__map[nextId];
+  }
+  return node.leaf;
+}
+
+// featObj keyed by feature names → [pHome, pTie, pAway]. Per-class margin =
+// learned base_margin (intercept) + Σ leaf values over that class's trees
+// (round-robin tree→class mapping), then softmax.
+function scoreF5(featObj) {
+  loadF5();
+  if (!_f5Model) return null;
+  const K = _f5Model.num_class;
+  const base = _f5Model.base_margin || new Array(K).fill(0);
+  const margins = base.slice(0, K);
+  _f5Model.trees.forEach((t, i) => { margins[i % K] += _f5Leaf(t, featObj); });
+  const mx = Math.max(...margins);
+  const exps = margins.map(m => Math.exp(m - mx));
+  const sum = exps.reduce((a, b) => a + b, 0);
+  return exps.map(e => e / sum);
+}
+
+// Average runs scored over a team's last N completed regular-season games.
+async function getTeamRecentRuns(teamId, season, n = 15) {
+  if (!teamId) return null;
+  const cacheKey = `team_runs_${teamId}_${season}`;
+  const cached = cacheGet(cacheKey);
+  if (cached !== null && cached !== undefined) return cached;
+  try {
+    const data = await fetchJson(`${MLB_API}/schedule?sportId=1&teamId=${teamId}&season=${season}&gameType=R&hydrate=linescore`);
+    const games = [];
+    for (const d of data.dates || []) {
+      for (const g of d.games || []) {
+        if (g.status?.abstractGameState !== 'Final') continue;
+        const home = g.teams?.home, away = g.teams?.away;
+        let runs = null;
+        if (String(home?.team?.id) === String(teamId)) runs = home?.score;
+        else if (String(away?.team?.id) === String(teamId)) runs = away?.score;
+        if (runs != null) games.push({ date: g.gameDate, runs });
+      }
+    }
+    games.sort((a, b) => String(a.date).localeCompare(String(b.date)));
+    const last = games.slice(-n);
+    const val = last.length ? Math.round(last.reduce((s, g) => s + g.runs, 0) / last.length * 10000) / 10000 : null;
+    cacheSet(cacheKey, val, LIVE_CACHE_TTL);
+    return val;
+  } catch { return null; }
+}
+
+// Pitcher sub-features. Uses current-season aggregate (= season-to-date during
+// the season) when the SP has ≥3 starts, else prior season, else league avg —
+// matching the fallback logic in ml/collect_mlb_f5.py.
+function _f5Pitcher(stats, fb) {
+  const cur = stats?.current, prev = stats?.previous;
+  const src = (cur && cur.gs != null && cur.gs >= 3) ? cur : (prev && prev.whip != null ? prev : null);
+  const ipps = (src && src.ip != null && src.gs) ? src.ip / src.gs : null;
+  return {
+    era: src?.era ?? fb.sp_era,
+    whip: src?.whip ?? fb.sp_whip,
+    k9: src?.k9 ?? fb.sp_k9,
+    bb9: src?.bb9 ?? fb.sp_bb9,
+    hr9: src?.hrPer9 ?? fb.sp_hr9,
+    ip_per_start: ipps ?? fb.sp_ip_per_start,
+  };
+}
+
+async function buildF5Features(awayStats, homeStats, lineups, weather, season, spec) {
+  const fb = spec.league_fallback;
+  const home = _f5Pitcher(homeStats, fb);
+  const away = _f5Pitcher(awayStats, fb);
+  const [homeRuns, awayRuns] = await Promise.all([
+    getTeamRecentRuns(lineups.home?.teamId, season),
+    getTeamRecentRuns(lineups.away?.teamId, season),
+  ]);
+  return {
+    home_sp_era: home.era, home_sp_whip: home.whip, home_sp_k9: home.k9, home_sp_bb9: home.bb9, home_sp_hr9: home.hr9, home_sp_ip_per_start: home.ip_per_start,
+    away_sp_era: away.era, away_sp_whip: away.whip, away_sp_k9: away.k9, away_sp_bb9: away.bb9, away_sp_hr9: away.hr9, away_sp_ip_per_start: away.ip_per_start,
+    home_runs_pg: homeRuns ?? fb.runs_pg,
+    away_runs_pg: awayRuns ?? fb.runs_pg,
+    park_hr_factor: parkHrFactor(weather?.venue) ?? fb.park_hr_factor,
+  };
+}
+
+function _f5FairOdds(p) {
+  if (p == null || p <= 0 || p >= 1) return null;
+  return p > 0.5 ? -Math.round(100 * p / (1 - p)) : Math.round(100 * (1 - p) / p);
 }
 
 async function getHighContactReport(gamePk, options = {}) {
@@ -898,7 +1053,9 @@ async function getHighContactReport(gamePk, options = {}) {
     const lineupBvp = summarizeLineupBvp(matchup);
     const throws = stats?.throws || null;
 
-    const subscores = {
+    // Each scorer returns { score, inputs, formula, note }. Keep the numeric
+    // subscores (for the bars) and assemble a methodology array (for citations).
+    const computed = {
       pitcherTraffic: scorePitcherTraffic(stats),
       pitchType:      scorePitchTypeWeakness(arsenal),
       oppVsHand:      scoreOppVsHand(oppHandSplits, throws),
@@ -906,8 +1063,39 @@ async function getHighContactReport(gamePk, options = {}) {
       weather:        scoreWeather(weather),
       bvp:            scoreBvP(lineupBvp),
     };
-    const parts = Object.keys(HC_WEIGHTS).map(k => ({ key: k, score: subscores[k], weight: HC_WEIGHTS[k] }));
+    const subscores = Object.fromEntries(Object.entries(computed).map(([k, v]) => [k, v.score]));
+    const parts = Object.keys(HC_WEIGHTS).map(k => ({ key: k, score: computed[k].score, weight: HC_WEIGHTS[k] }));
     const { score, level } = combineRisk(parts);
+
+    // Data provenance per parameter — concrete source + the exact endpoint the
+    // value was pulled from, so the numbers can be independently verified.
+    const SAVANT = 'https://baseballsavant.mlb.com';
+    const STATS = 'https://statsapi.mlb.com/api/v1';
+    const PARAM_META = {
+      pitcherTraffic: { label: 'PITCHER TRAFFIC', source: 'MLB Stats API · season pitching aggregate',
+        endpoint: `${STATS}/people/${pitcher.id}/stats?stats=season&group=pitching&season=${season}` },
+      pitchType:      { label: 'PITCH-TYPE WEAKNESS', source: 'Baseball Savant · pitch-arsenal-stats leaderboard (Statcast xwOBA)',
+        endpoint: `${SAVANT}/leaderboard/pitch-arsenal-stats?type=pitcher&year=${season}&min=1&csv=true` },
+      oppVsHand:      { label: 'OPP vs HAND', source: 'MLB Stats API · opponent team hitting statSplits',
+        endpoint: `${STATS}/teams/${oppInfo?.teamId}/stats?stats=statSplits&group=hitting&season=${season}&sitCodes=vr,vl` },
+      lineupStrength: { label: 'LINEUP STRENGTH', source: 'Baseball Savant · Statcast batter-vs-pitcher (per hitter vs this SP)',
+        endpoint: `${SAVANT}/statcast_search/csv?player_type=batter&pitchers_lookup[]=${pitcher.id}&batters_lookup[]={each lineup hitter}&type=details` },
+      weather:        { label: 'WEATHER', source: 'MLB Stats API · live game feed (gameData.weather + venue.roofType)',
+        endpoint: `https://statsapi.mlb.com/api/v1.1/game/${gamePk}/feed/live` },
+      bvp:            { label: 'BvP', source: 'Baseball Savant · Statcast batter-vs-pitcher (lineup PA confidence)',
+        endpoint: `${SAVANT}/statcast_search/csv?player_type=batter&pitchers_lookup[]=${pitcher.id}&batters_lookup[]={each lineup hitter}&type=details` },
+    };
+    const methodology = Object.keys(HC_WEIGHTS).map(k => ({
+      key: k,
+      label: PARAM_META[k].label,
+      weight: HC_WEIGHTS[k],
+      score: computed[k].score,
+      source: PARAM_META[k].source,
+      endpoint: PARAM_META[k].endpoint,
+      inputs: computed[k].inputs || {},
+      formula: computed[k].formula || null,
+      note: computed[k].note || null,
+    }));
 
     // Verified-data status: what evidence did we actually collect?
     const verified = {
@@ -934,6 +1122,7 @@ async function getHighContactReport(gamePk, options = {}) {
       lineupBvp,
       subscores,
       weights: HC_WEIGHTS,
+      methodology,
       riskScore: score,
       riskLevel: level,
       verified,
@@ -941,12 +1130,43 @@ async function getHighContactReport(gamePk, options = {}) {
   };
 
   const [away, home] = await Promise.all([buildSide('away'), buildSide('home')]);
+
+  // First-5-innings money-line model (XGBoost) — top-of-tab projection.
+  let f5 = null;
+  loadF5();
+  if (_f5Model && _f5Spec && away?.pitcher && home?.pitcher) {
+    try {
+      const weatherForPark = await fetchGameWeather(gamePk);
+      const features = await buildF5Features(away.stats, home.stats, lineups, weatherForPark, season, _f5Spec);
+      const probs = scoreF5(features);
+      if (probs) {
+        const [pHome, pTie, pAway] = probs;
+        const labels = ['home', 'tie', 'away'];
+        const pick = labels[probs.indexOf(Math.max(...probs))];
+        f5 = {
+          probs: { home: pHome, tie: pTie, away: pAway },
+          pick,
+          fairOdds: { home: _f5FairOdds(pHome), tie: _f5FairOdds(pTie), away: _f5FairOdds(pAway) },
+          features,
+          model: { trainedAt: _f5Model.trained_at, val: _f5Model.val, nTrees: _f5Model.n_trees },
+          source: 'XGBoost (multi:softprob) · MLB Stats API features',
+        };
+      }
+    } catch (e) { console.error('F5 model failed', e.message); }
+  }
+
   const result = {
     gamePk,
     season,
     away,
     home,
+    f5,
     source: 'MLB Stats API + Baseball Savant',
+    riskFormula: 'Risk = Σ(subscore × weight) ÷ Σ(weight of present parts), renormalized over available signals. Levels: HIGH ≥ 65, MEDIUM ≥ 40, LOW < 40.',
+    dataSources: {
+      'MLB Stats API': 'https://statsapi.mlb.com — pitcher season stats, team hitting splits, bullpen, lineups, live weather feed',
+      'Baseball Savant': 'https://baseballsavant.mlb.com — Statcast pitch-arsenal xwOBA and batter-vs-pitcher (BvP)',
+    },
     cachedAt: new Date().toISOString(),
   };
   cacheSet(cacheKey, result, LIVE_CACHE_TTL);
@@ -1401,4 +1621,5 @@ module.exports = {
   findGamePkByTeams,
   getHighContactReport,
   getLowHrReport,
+  scoreF5,
 };

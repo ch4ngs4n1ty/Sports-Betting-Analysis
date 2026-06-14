@@ -17,3 +17,11 @@ node_modules/
 
 # NOTE: server/data/*.json IS committed on purpose — Render free tier has no
 # persistent disk, so the bundled aggregates make cold starts fast.
+
+# ML pipeline scratch (the trained model in server/data/ IS committed; these
+# intermediates are not). CI restores ml/cache via actions/cache.
+ml/.venv/
+ml/cache/
+ml/data/
+__pycache__/
+*.pyc
