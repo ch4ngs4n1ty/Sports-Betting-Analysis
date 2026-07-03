@@ -30,12 +30,21 @@ async function fetchJson(url) {
   return JSON.parse(text);
 }
 
+// Public read-only data API: CORS defaults to "*" (no cookies/auth to protect).
+// Set CORS_ORIGIN in the environment to lock it to a specific origin if desired.
+const ALLOW_ORIGIN = process.env.CORS_ORIGIN || '*';
+
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': ALLOW_ORIGIN,
+  'Access-Control-Allow-Methods': 'GET, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type',
+};
+
 function sendJson(res, data, status = 200) {
   res.writeHead(status, {
     'Content-Type': 'application/json',
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type',
+    'X-Content-Type-Options': 'nosniff',
+    ...CORS_HEADERS,
   });
   res.end(JSON.stringify(data));
 }
@@ -51,4 +60,5 @@ module.exports = {
   fetchJson,
   sendJson,
   sendError,
+  CORS_HEADERS,
 };

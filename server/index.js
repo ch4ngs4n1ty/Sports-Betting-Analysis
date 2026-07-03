@@ -3,8 +3,9 @@
    Thin entrypoint that routes to sport-specific services
 ═══════════════════════════════════════════════════════════ */
 
-const { http, URL, sendJson, sendError } = require('./shared/http');
+const { http, URL, sendJson, sendError, CORS_HEADERS } = require('./shared/http');
 const { cache } = require('./shared/cache');
+const { getClientIp, rateLimit, isIntId, isYmd, isSeason, cleanText } = require('./shared/security');
 const {
   getGames,
   getGameLineups,
@@ -34,11 +35,7 @@ const HOST = process.env.HOST || '0.0.0.0';
 const server = http.createServer(async (req, res) => {
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
-    res.writeHead(204, {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type',
-    });
+    res.writeHead(204, CORS_HEADERS);
     res.end();
     return;
   }
@@ -47,6 +44,46 @@ const server = http.createServer(async (req, res) => {
   const path = url.pathname;
 
   try {
+    // ── Only GET is supported (read-only data API) ──
+    if (req.method !== 'GET') return sendError(res, 'Method not allowed', 405);
+
+    // ── Rate limiting (health check exempt so uptime pings never trip it) ──
+    if (path !== '/api/health') {
+      const ip = getClientIp(req);
+      // Generous global cap for normal browsing.
+      if (!rateLimit(ip, { bucket: 'all', limit: 120, windowMs: 60_000 })) {
+        return sendError(res, 'Too many requests. Please slow down.', 429);
+      }
+      // `refresh=1` can trigger expensive upstream re-crawls (minutes long);
+      // guard it hard so it can't be used to hammer the backend.
+      if (url.searchParams.get('refresh') === '1' &&
+          !rateLimit(ip, { bucket: 'refresh', limit: 6, windowMs: 60_000 })) {
+        return sendError(res, 'Too many refresh requests. Please wait a minute.', 429);
+      }
+    }
+
+    // ── Input validation: reject malformed values that reach upstream URLs ──
+    const gamePkRaw = url.searchParams.get('gamePk');
+    if (gamePkRaw != null && !isIntId(gamePkRaw)) return sendError(res, 'invalid gamePk');
+    const batterIdRaw = url.searchParams.get('batterId');
+    if (batterIdRaw != null && !isIntId(batterIdRaw)) return sendError(res, 'invalid batterId');
+    const pitcherIdRaw = url.searchParams.get('pitcherId');
+    if (pitcherIdRaw != null && !isIntId(pitcherIdRaw)) return sendError(res, 'invalid pitcherId');
+    const dateRaw = url.searchParams.get('date');
+    if (dateRaw != null && !isYmd(dateRaw)) return sendError(res, 'invalid date (expected YYYY-MM-DD)');
+    const seasonRaw = url.searchParams.get('season');
+    if (seasonRaw != null && !isSeason(seasonRaw)) return sendError(res, 'invalid season');
+
+    // ── Sanitize free-text params in place (names used for matching only) ──
+    for (const p of ['away', 'home', 'teamAbbr', 'team', 'position', 'awayPitcher', 'homePitcher']) {
+      const v = url.searchParams.get(p);
+      if (v != null) { const c = cleanText(v, 60); c ? url.searchParams.set(p, c) : url.searchParams.delete(p); }
+    }
+    for (const p of ['awayLineup', 'homeLineup']) {
+      const v = url.searchParams.get(p);
+      if (v != null) { const c = cleanText(v, 600); c ? url.searchParams.set(p, c) : url.searchParams.delete(p); }
+    }
+
     // GET /api/mlb/games?date=2026-04-13 — games for a date (defaults to today)
     if (path === '/api/mlb/games') {
       const date = url.searchParams.get('date') || undefined;
@@ -295,8 +332,13 @@ const server = http.createServer(async (req, res) => {
 
     sendError(res, 'Not found', 404);
   } catch (err) {
-    console.error(`[ERROR] ${path}:`, err.message);
-    sendError(res, err.message, 500);
+    // Log full detail server-side; never leak internal error text (which can
+    // contain upstream URLs/hosts) to clients in production.
+    console.error(`[ERROR] ${path}:`, (err && err.stack) || err);
+    const clientMsg = process.env.NODE_ENV === 'production'
+      ? 'Internal server error'
+      : (err && err.message) || 'error';
+    sendError(res, clientMsg, 500);
   }
 });
 
