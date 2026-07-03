@@ -3,9 +3,20 @@
    MLB-only frontend helpers and backend endpoints
    ============================================================ */
 
+// ESPN's ev.date is a UTC timestamp, so a night game (e.g. 8pm ET) is already
+// the NEXT calendar day in UTC. Slicing it (`.slice(0,10)`) would send the
+// backend tomorrow's date, which for a series resolves TOMORROW's game/pitcher.
+// MLB's schedule buckets by the ballpark business date (ET), so normalize to ET
+// — the same convention fetchAllGames already uses for the date picker.
+function mlbBusinessDate(iso) {
+  if (!iso) return '';
+  try { return new Date(iso).toLocaleDateString('en-CA', { timeZone: 'America/New_York' }); }
+  catch { return String(iso).slice(0, 10); }
+}
+
 async function fetchGameBvp(gameInfo, lineups, pitchers) {
   try {
-    const date = gameInfo.date ? gameInfo.date.slice(0, 10) : '';
+    const date = mlbBusinessDate(gameInfo.date);
     const awayNames = (lineups?.away || []).map(b => b.name).join(',');
     const homeNames = (lineups?.home || []).map(b => b.name).join(',');
     const url = `${API_BASE}/api/mlb/game-bvp`
@@ -26,7 +37,7 @@ async function fetchGameBvp(gameInfo, lineups, pitchers) {
 
 async function fetchHighContactReport(gameInfo, lineups, pitchers) {
   try {
-    const date = gameInfo.date ? gameInfo.date.slice(0, 10) : '';
+    const date = mlbBusinessDate(gameInfo.date);
     const awayNames = (lineups?.away || []).map(b => b.name).join(',');
     const homeNames = (lineups?.home || []).map(b => b.name).join(',');
     const url = `${API_BASE}/api/mlb/high-contact`
@@ -47,7 +58,7 @@ async function fetchHighContactReport(gameInfo, lineups, pitchers) {
 
 async function fetchLowHrReport(gameInfo, lineups, pitchers) {
   try {
-    const date = gameInfo.date ? gameInfo.date.slice(0, 10) : '';
+    const date = mlbBusinessDate(gameInfo.date);
     const awayNames = (lineups?.away || []).map(b => b.name).join(',');
     const homeNames = (lineups?.home || []).map(b => b.name).join(',');
     const url = `${API_BASE}/api/mlb/low-hr-model`
@@ -68,7 +79,7 @@ async function fetchLowHrReport(gameInfo, lineups, pitchers) {
 
 async function fetchMlbPropModel(gameInfo, lineups, pitchers) {
   try {
-    const date = gameInfo.date ? gameInfo.date.slice(0, 10) : '';
+    const date = mlbBusinessDate(gameInfo.date);
     const awayNames = (lineups?.away || []).map(b => b.name).join(',');
     const homeNames = (lineups?.home || []).map(b => b.name).join(',');
     const url = `${API_BASE}/api/mlb/prop-model`

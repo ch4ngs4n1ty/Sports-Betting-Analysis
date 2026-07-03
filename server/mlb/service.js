@@ -102,7 +102,10 @@ function resolveRosterEntry(name, rosterMap) {
 }
 
 async function getGameLineups(gamePk, options = {}) {
-  const cacheKey = `lineup_${gamePk}_${options.awayLineup?.join(',') || ''}_${options.homeLineup?.join(',') || ''}`;
+  // Pitcher overrides participate in the cache key so an override-resolved
+  // result isn't served to a call that didn't pass one (and vice versa).
+  const cacheKey = `lineup_${gamePk}_${options.awayLineup?.join(',') || ''}_${options.homeLineup?.join(',') || ''}`
+    + `_${options.awayPitcher || ''}_${options.homePitcher || ''}`;
   if (!options.refresh) {
     const cached = cacheGet(cacheKey);
     if (cached) return cached;
@@ -148,11 +151,28 @@ async function getGameLineups(gamePk, options = {}) {
     }
 
     const pp = probablePitchers[side];
+    let probablePitcher = pp ? { id: pp.id, name: pp.fullName } : null;
+
+    // MLB Stats API's probablePitchers field lags ESPN (or is missing until
+    // close to first pitch). When the caller supplies the starter's name
+    // (the frontend passes ESPN's probable via awayPitcher/homePitcher),
+    // resolve it against the roster so every consumer — High Contact, Low HR,
+    // and the prop model — sees the same starter the Pitching/Edge Finder
+    // tabs already show. Only used as a fallback; MLB's own field wins.
+    if (!probablePitcher) {
+      const provided = options[`${side}Pitcher`];
+      if (provided && team.team?.id) {
+        const rosterMap = await getTeamRosterMap(team.team.id);
+        const resolved = resolveRosterEntry(provided, rosterMap);
+        if (resolved) probablePitcher = { id: resolved.id, name: resolved.name };
+      }
+    }
+
     result[side] = {
       teamId: team.team?.id,
       teamName: team.team?.name,
       lineup,
-      probablePitcher: pp ? { id: pp.id, name: pp.fullName } : null,
+      probablePitcher,
     };
   }
 
