@@ -21,7 +21,7 @@ playiq/
 │   │   ├── tabs/common-tabs.jsx                — Sport-agnostic tabs: OverviewTab, H2HTab, FormTab, RosterTab, AIPlaysTab
 │   │   └── screens/
 │   │       ├── home-screen.jsx                 — HomeScreen (sport picker)
-│   │       ├── games-screen.jsx                — GamesScreen (today's games)
+│   │       ├── games-screen.jsx                — GamesScreen (today's games; MLB cards show a research-readiness strip: SP + LINEUP pills + ● READY, from /api/mlb/games readiness flags)
 │   │       └── game-detail-screen.jsx          — GameDetailScreen + TABS_MLB / TABS_NBA / TABS_OTHER + Phase 1 / Phase 2 loading
 │   └── sports/
 │       ├── mlb/tabs.jsx                        — MLB-specific tabs: EdgeFinderTab (incl. PROP PROJECTION MODEL board: transparent Log5 P(Hits/RBI/K≥line)), PitchingEdgeTab, LowHrModelTab, HighContactTab

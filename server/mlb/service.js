@@ -19,10 +19,18 @@ async function getGames(dateOverride) {
   const cached = cacheGet(cacheKey);
   if (cached) return cached;
 
-  const data = await fetchJson(`${MLB_API}/schedule?sportId=1&date=${date}&hydrate=probablePitcher`);
+  // `lineups` hydration returns awayPlayers/homePlayers once each batting order
+  // is posted — lets the slate show research-readiness in ONE call (no per-game
+  // fetches). probablePitcher gives the SP-decided signal.
+  const data = await fetchJson(`${MLB_API}/schedule?sportId=1&date=${date}&hydrate=probablePitcher,lineups`);
   const games = [];
   for (const d of data.dates || []) {
     for (const g of d.games || []) {
+      const awaySP = !!g.teams.away.probablePitcher?.id;
+      const homeSP = !!g.teams.home.probablePitcher?.id;
+      const lu = g.lineups || {};
+      const awayLU = (lu.awayPlayers || []).length >= 9;
+      const homeLU = (lu.homePlayers || []).length >= 9;
       games.push({
         gamePk: g.gamePk,
         away: {
@@ -43,6 +51,12 @@ async function getGames(dateOverride) {
         },
         status: g.status.detailedState,
         startTime: g.gameDate,
+        // Slate research-readiness (both sides required for the ✓ state).
+        readiness: {
+          awayPitcher: awaySP, homePitcher: homeSP, pitchers: awaySP && homeSP,
+          awayLineup: awayLU, homeLineup: homeLU, lineups: awayLU && homeLU,
+          researchReady: awaySP && homeSP && awayLU && homeLU,
+        },
       });
     }
   }

@@ -3,17 +3,52 @@
    Multi-sport schedule view
    ============================================================ */
 
+// Research-readiness strip for pre-game MLB cards: are the starters and batting
+// lineups set? Lets the user skip games that aren't ready to analyze yet.
+function MlbReadyRow({ r }) {
+  if (!r) return null;
+  const pill = (label, full, partial) => {
+    const state = full ? 'full' : partial ? 'partial' : 'none';
+    const c = state === 'full' ? '#00ff88' : state === 'partial' ? '#ffd060' : 'var(--dim)';
+    const glyph = state === 'full' ? '✓' : state === 'partial' ? '◐' : '○';
+    return (
+      <span title={`${label}: ${state === 'full' ? 'both set' : state === 'partial' ? 'one side set' : 'not set yet'}`}
+        style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 8.5, fontFamily: 'Space Mono, monospace',
+          color: c, letterSpacing: '0.08em', padding: '2px 7px', borderRadius: 2,
+          background: state === 'none' ? 'transparent' : `${c}14`,
+          border: `1px solid ${state === 'none' ? 'rgba(255,255,255,0.06)' : c + '44'}` }}>
+        {glyph} {label}
+      </span>
+    );
+  };
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 12, flexWrap: 'wrap' }}>
+      {pill('SP', r.pitchers, r.awayPitcher || r.homePitcher)}
+      {pill('LINEUP', r.lineups, r.awayLineup || r.homeLineup)}
+      {r.researchReady && (
+        <span style={{ marginLeft: 'auto', fontSize: 8.5, fontFamily: 'Orbitron, monospace', fontWeight: 700, letterSpacing: '0.1em',
+          color: '#00ff88', padding: '2px 8px', borderRadius: 2, background: 'rgba(0,255,136,0.12)',
+          border: '1px solid rgba(0,255,136,0.4)', boxShadow: '0 0 10px rgba(0,255,136,0.25)' }}>● READY</span>
+      )}
+    </div>
+  );
+}
+
 function GamesScreen({ onSelectGame, onBack }) {
   const [games, setGames] = React.useState([]);
   const [loading, setLoading] = React.useState(true);
   const [date, setDate] = React.useState(new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' }));
   const [filter, setFilter] = React.useState('all');
+  const [mlbReadiness, setMlbReadiness] = React.useState([]);
 
   React.useEffect(() => {
     // Mirror prewarm here in case the user lands on Games via deep link.
     prewarmBackend();
     setLoading(true);
+    setMlbReadiness([]);
     fetchAllGames(date).then(g => { setGames(g); setLoading(false); });
+    // Slate readiness (SP + lineups) for MLB cards — one backend call, non-blocking.
+    fetchMlbSlateReadiness(date).then(setMlbReadiness).catch(() => {});
   }, [date]);
 
   const sports = ['all', ...new Set(games.map(g => g.sportKey))];
@@ -88,6 +123,9 @@ function GamesScreen({ onSelectGame, onBack }) {
                           </div>
                         </div>
                       </div>
+                      {g.sportKey === 'mlb' && !isLive && !isFinal && (
+                        <MlbReadyRow r={findMlbReadiness(mlbReadiness, g.awayFull, g.homeFull)} />
+                      )}
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: 10, borderTop: '1px solid rgba(255,255,255,0.04)' }}>
                         <div style={{ display: 'flex', gap: 6 }}>
                           {g.spread && <span style={{ fontSize: 9, fontFamily: 'Space Mono, monospace', color: 'var(--muted)', padding: '2px 6px', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 2 }}>{g.spread}</span>}
