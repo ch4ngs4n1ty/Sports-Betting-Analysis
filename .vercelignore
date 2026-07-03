@@ -1,0 +1,30 @@
+# PlayIQ is a static frontend on Vercel. Only index.html + frontend/ + PWA
+# assets are served. Everything below is backend, ML pipeline, docs, or dead
+# legacy code — excluded from the deployment upload so the public site stays
+# clean and backend source isn't published.
+
+# Backend (lives on Render, not Vercel)
+server/
+
+# Offline ML pipeline (Python; runs in CI only)
+ml/
+
+# CI / repo tooling & docs
+.github/
+docs/
+.claude/
+.claudeignore
+.vscode/
+render.yaml
+CLAUDE.md
+
+# Dead legacy root files — NOT loaded by index.html (see CLAUDE.md).
+# The live frontend lives under frontend/.
+data-layer.js
+tabs.jsx
+screens-v2.jsx
+ui-atoms.jsx
+
+# Noise
+*.log
+.DS_Store
