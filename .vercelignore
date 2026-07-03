@@ -19,11 +19,13 @@ render.yaml
 CLAUDE.md
 
 # Dead legacy root files — NOT loaded by index.html (see CLAUDE.md).
-# The live frontend lives under frontend/.
-data-layer.js
-tabs.jsx
-screens-v2.jsx
-ui-atoms.jsx
+# The live frontend lives under frontend/. Leading "/" anchors these to the
+# repo root so they DON'T also match the live frontend/**/{ui-atoms,tabs}.jsx
+# files (unanchored names match by basename anywhere in the tree).
+/data-layer.js
+/tabs.jsx
+/screens-v2.jsx
+/ui-atoms.jsx
 
 # Noise
 *.log
