@@ -47,8 +47,18 @@ function GamesScreen({ onSelectGame, onBack }) {
     setLoading(true);
     setMlbReadiness([]);
     fetchAllGames(date).then(g => { setGames(g); setLoading(false); });
-    // Slate readiness (SP + lineups) for MLB cards — one backend call, non-blocking.
-    fetchMlbSlateReadiness(date).then(setMlbReadiness).catch(() => {});
+
+    // Slate readiness (SP + lineups) for MLB cards. fetchMlbSlateReadiness
+    // retries through a Render cold start; poll every 2 min so the strip also
+    // updates live as lineups post through the evening. Guard against stale
+    // writes when the date changes / the screen unmounts.
+    let cancelled = false;
+    const loadReadiness = () => fetchMlbSlateReadiness(date)
+      .then(r => { if (!cancelled) setMlbReadiness(r); })
+      .catch(() => {});
+    loadReadiness();
+    const pollId = setInterval(loadReadiness, 120000);
+    return () => { cancelled = true; clearInterval(pollId); };
   }, [date]);
 
   const sports = ['all', ...new Set(games.map(g => g.sportKey))];

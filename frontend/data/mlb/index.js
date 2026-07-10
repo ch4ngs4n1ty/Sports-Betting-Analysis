@@ -100,13 +100,22 @@ async function fetchMlbPropModel(gameInfo, lineups, pitchers) {
 
 // Slate research-readiness for MLB cards (one backend call = SP + lineup state
 // for every game on the date). Degrades to [] if the backend is unavailable.
-async function fetchMlbSlateReadiness(date) {
+async function fetchMlbSlateReadiness(date, attempt = 0) {
+  // Render's free tier cold-starts (~30-50s) and 502s the first requests, so a
+  // single try silently yields an empty strip on the first visit. Retry with
+  // backoff (~40s total) so readiness fills in once the backend wakes — no
+  // manual reload needed.
+  const BACKOFF = [1500, 3000, 6000, 12000, 18000];
   try {
     const r = await fetch(`${API_BASE}/api/mlb/games${date ? `?date=${encodeURIComponent(date)}` : ''}`);
-    if (!r.ok) return [];
+    if (!r.ok) throw new Error('status ' + r.status);
     const d = await r.json();
     return (d.games || []).map(g => ({ away: g.away?.name, home: g.home?.name, readiness: g.readiness }));
-  } catch {
+  } catch (e) {
+    if (attempt < BACKOFF.length) {
+      await new Promise(res => setTimeout(res, BACKOFF[attempt]));
+      return fetchMlbSlateReadiness(date, attempt + 1);
+    }
     return [];
   }
 }
