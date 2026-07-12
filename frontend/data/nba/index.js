@@ -709,6 +709,10 @@ function nbaProbColor(prob) {
 
 Object.assign(window, {
   fetchHoopsPlayerGameLog,
+  // Generic basketball helpers — shared with WNBA (see frontend/data/wnba/).
+  aggregateHoopsGames: _aggregatePlayerGames,
+  bucketStartersByGroup: _bucketStartersByGroup,
+  buildBucketMatchups: _buildBucketMatchups,
   fetchNbaPlayerGameLog,
   fetchNbaStartingLineup,
   fetchNbaPositionalDefenseEdge,

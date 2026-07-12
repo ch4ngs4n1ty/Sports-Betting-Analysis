@@ -333,7 +333,7 @@ function NbaDefenseChip({ edge, align }) {
   );
 }
 
-function NbaPlayerColumn({ player, accent, align, defenseEdge }) {
+function NbaPlayerColumn({ player, accent, align, defenseEdge, showDefense = true }) {
   if (!player) {
     return (
       <div style={{ flex: 1, padding: 12, opacity: 0.4, textAlign: align, fontFamily: 'Space Mono, monospace', fontSize: 10, color: 'var(--dim)', letterSpacing: '0.1em' }}>
@@ -352,7 +352,7 @@ function NbaPlayerColumn({ player, accent, align, defenseEdge }) {
           </div>
         </div>
       </div>
-      <NbaDefenseChip edge={defenseEdge} align={align} />
+      {showDefense && <NbaDefenseChip edge={defenseEdge} align={align} />}
     </div>
   );
 }
@@ -388,7 +388,7 @@ function NbaStatRow({ label, awayVal, homeVal, fmt, lowerIsBetter, awayColor, ho
   );
 }
 
-function NbaMatchupRow({ matchup, awayAbbr, homeAbbr, awayColor, homeColor, defenseEdge }) {
+function NbaMatchupRow({ matchup, awayAbbr, homeAbbr, awayColor, homeColor, defenseEdge, showDefense = true }) {
   const [mode, setMode] = React.useState('season'); // 'season' | 'h2h' | 'l5'
   const a = matchup.away;
   const h = matchup.home;
@@ -424,9 +424,9 @@ function NbaMatchupRow({ matchup, awayAbbr, homeAbbr, awayColor, homeColor, defe
       </div>
 
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, marginBottom: 12 }}>
-        <NbaPlayerColumn player={a} accent={awayColor} align="left" defenseEdge={awayDefense} />
+        <NbaPlayerColumn player={a} accent={awayColor} align="left" defenseEdge={awayDefense} showDefense={showDefense} />
         <div style={{ fontFamily: 'Orbitron, monospace', fontSize: 11, color: 'var(--dim)', letterSpacing: '0.15em', paddingTop: 14 }}>VS</div>
-        <NbaPlayerColumn player={h} accent={homeColor} align="right" defenseEdge={homeDefense} />
+        <NbaPlayerColumn player={h} accent={homeColor} align="right" defenseEdge={homeDefense} showDefense={showDefense} />
       </div>
 
       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9, fontFamily: 'Space Mono, monospace', color: 'var(--muted)', letterSpacing: '0.1em', marginBottom: 8, padding: '6px 0', borderTop: '1px solid rgba(255,255,255,0.05)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
@@ -667,6 +667,10 @@ function NbaLineupTab({ gameData }) {
   React.useEffect(() => { setData(nbaLineupData); }, [nbaLineupData]);
   React.useEffect(() => { setDefenseEdge(nbaDefenseEdge); }, [nbaDefenseEdge]);
 
+  // WNBA reuses this tab. It has no Rotowire feed and no defense-vs-position
+  // table (both NBA-only backends), so dispatch the builder and skip defense.
+  const isWnba = gameInfo?.sportKey === 'wnba';
+
   const refresh = React.useCallback(async () => {
     if (refreshingRef.current) return;
     refreshingRef.current = true;
@@ -675,18 +679,22 @@ function NbaLineupTab({ gameData }) {
       // Pull lineups + positional defense in parallel — both keyed on starters,
       // so a roster change must update both signals together.
       const [freshLineup, freshDefense] = await Promise.all([
-        buildNbaLineupData(gameInfo, awayRoster, homeRoster, { refresh: true }),
-        fetchNbaPositionalDefenseEdge(gameInfo, { refresh: true }),
+        isWnba
+          ? buildWnbaLineupData(gameInfo, awayRoster, homeRoster, { refresh: true })
+          : buildNbaLineupData(gameInfo, awayRoster, homeRoster, { refresh: true }),
+        isWnba
+          ? Promise.resolve(null)
+          : fetchNbaPositionalDefenseEdge(gameInfo, { refresh: true }),
       ]);
       if (freshLineup) setData(freshLineup);
       if (freshDefense) setDefenseEdge(freshDefense);
     } catch (e) {
-      console.warn('NBA lineup refresh failed:', e);
+      console.warn('Lineup refresh failed:', e);
     } finally {
       refreshingRef.current = false;
       setRefreshing(false);
     }
-  }, [gameInfo, awayRoster, homeRoster]);
+  }, [gameInfo, awayRoster, homeRoster, isWnba]);
 
   // Auto-poll: every 60s when lineups are unconfirmed, every 5min once confirmed.
   // Stops when this tab unmounts.
@@ -720,14 +728,14 @@ function NbaLineupTab({ gameData }) {
         awayColor={awayColor} homeColor={homeColor}
         onRefresh={refresh} refreshing={refreshing} />
 
-      <NbaDefenseLegend />
+      {!isWnba && <NbaDefenseLegend />}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         {data.matchups.map(m => (
           <NbaMatchupRow key={m.position} matchup={m}
             awayAbbr={gameInfo.awayAbbr} homeAbbr={gameInfo.homeAbbr}
             awayColor={awayColor} homeColor={homeColor}
-            defenseEdge={defenseEdge} />
+            defenseEdge={defenseEdge} showDefense={!isWnba} />
         ))}
       </div>
     </div>

@@ -16,7 +16,7 @@ playiq/
 │   │   ├── shared/core.js                      — ESPN helpers, SPORTS_CONFIG, fetchAllGames, fetchTeamForm, fetchH2H, fetchInjuries, fetchRoster, Claude API, AI plays
 │   │   ├── mlb/index.js                        — MLB-only helpers: fetchGameBvp, fetchHighContactReport, fetchWeather, fetchMlbStarters, fetchPlayerGameLog, buildMlbEdgeData
 │   │   ├── nba/index.js                        — NBA-only helpers: fetchHoopsPlayerGameLog (shared w/ WNBA), buildNbaEdgeData (incl. per-player `proj` distribution), lineup + positional-defense fetchers, threshold projection model (nbaThresholdProbability + buckets)
-│   │   └── wnba/index.js                       — WNBA: buildWnbaEdgeData. Reuses the basketball gamelog parser + the (sport-agnostic) threshold model; NO Rotowire lineups / defense-vs-position (NBA-only backends), so the board runs without a matchup adjustment
+│   │   └── wnba/index.js                       — WNBA: buildWnbaEdgeData + buildWnbaLineupData (starters from ESPN boxscore once live; top-5-by-minutes projection pre-game). Reuses the basketball gamelog parser + the (sport-agnostic) threshold model; NO Rotowire lineups / defense-vs-position (NBA-only backends), so boards run without a matchup adjustment. `NbaLineupTab`/`NbaEdgeFinderTab` are reused for WNBA (gated on `gameInfo.sportKey === 'wnba'`)
 │   ├── shared/
 │   │   ├── ui-atoms.jsx                        — Primitive UI components (HudCard, PlayerCard, Sparkline, OpsGauge, WeatherPill, TabLoader, etc.)
 │   │   ├── tabs/common-tabs.jsx                — Sport-agnostic tabs: OverviewTab, H2HTab, FormTab, RosterTab, AIPlaysTab

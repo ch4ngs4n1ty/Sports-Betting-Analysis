@@ -34,6 +34,7 @@ const TABS_WNBA = [
   { id: 'h2h', label: 'HEAD-TO-HEAD' },
   { id: 'form', label: 'LAST 5' },
   { id: 'roster', label: 'ROSTERS' },
+  { id: 'lineups', label: 'LINEUPS' },
   { id: 'edges', label: 'EDGE FINDER' },
   { id: 'ai', label: '◆ AI PLAYS' },
 ];
@@ -93,7 +94,7 @@ function GameDetailScreen({ game, onBack }) {
           : game.sportKey === 'nba'
           ? { nbaEdgeData: true, nbaLineupData: true, nbaDefenseEdge: true, nbaDefenseTable: true }
           : game.sportKey === 'wnba'
-          ? { nbaEdgeData: true }
+          ? { nbaEdgeData: true, nbaLineupData: true }
           : {};
         const baseData = { gameInfo: game, awayForm, homeForm, injuries, awayRoster, homeRoster, h2h, _loading: initLoading };
         setGameData(baseData);
@@ -155,12 +156,17 @@ function GameDetailScreen({ game, onBack }) {
             if (!cancelled) setGameData(prev => prev && { ...prev, _loading: { ...prev._loading, nbaDefenseTable: false } });
           });
         } else if (game.sportKey === 'wnba') {
-          // Feeds the same NbaEdgeFinderTab board; no defense-vs-position table
-          // for WNBA, so the model runs without a matchup adjustment.
+          // Feeds the same NbaEdgeFinderTab / NbaLineupTab; no defense-vs-position
+          // table for WNBA, so those run without a matchup adjustment.
           buildWnbaEdgeData(game).then(nbaEdgeData => {
             if (!cancelled) setGameData(prev => prev && { ...prev, nbaEdgeData, _loading: { ...prev._loading, nbaEdgeData: false } });
           }).catch(() => {
             if (!cancelled) setGameData(prev => prev && { ...prev, _loading: { ...prev._loading, nbaEdgeData: false } });
+          });
+          buildWnbaLineupData(game, awayRoster, homeRoster).then(nbaLineupData => {
+            if (!cancelled) setGameData(prev => prev && { ...prev, nbaLineupData, _loading: { ...prev._loading, nbaLineupData: false } });
+          }).catch(() => {
+            if (!cancelled) setGameData(prev => prev && { ...prev, _loading: { ...prev._loading, nbaLineupData: false } });
           });
         }
         // Phase 2 step indicator hides when load() returns; any tab waiting
