@@ -15,7 +15,8 @@ playiq/
 │   ├── data/
 │   │   ├── shared/core.js                      — ESPN helpers, SPORTS_CONFIG, fetchAllGames, fetchTeamForm, fetchH2H, fetchInjuries, fetchRoster, Claude API, AI plays
 │   │   ├── mlb/index.js                        — MLB-only helpers: fetchGameBvp, fetchHighContactReport, fetchWeather, fetchMlbStarters, fetchPlayerGameLog, buildMlbEdgeData
-│   │   └── nba/index.js                        — NBA-only helpers: fetchNbaPlayerGameLog, buildNbaEdgeData (incl. per-player `proj` distribution), lineup + positional-defense fetchers, threshold projection model (nbaThresholdProbability + buckets)
+│   │   ├── nba/index.js                        — NBA-only helpers: fetchHoopsPlayerGameLog (shared w/ WNBA), buildNbaEdgeData (incl. per-player `proj` distribution), lineup + positional-defense fetchers, threshold projection model (nbaThresholdProbability + buckets)
+│   │   └── wnba/index.js                       — WNBA: buildWnbaEdgeData. Reuses the basketball gamelog parser + the (sport-agnostic) threshold model; NO Rotowire lineups / defense-vs-position (NBA-only backends), so the board runs without a matchup adjustment
 │   ├── shared/
 │   │   ├── ui-atoms.jsx                        — Primitive UI components (HudCard, PlayerCard, Sparkline, OpsGauge, WeatherPill, TabLoader, etc.)
 │   │   ├── tabs/common-tabs.jsx                — Sport-agnostic tabs: OverviewTab, H2HTab, FormTab, RosterTab, AIPlaysTab
@@ -140,7 +141,9 @@ Everything attaches to `window` for cross-script access. Exports include:
 | `generateAIPlays(gameData)` | Claude call for 3 recommended plays (returns `{error:'NO_API_KEY'}` when key missing) |
 | `claudeComplete(prompt, opts)` | Low-level Claude call — used by `AIPlaysTab` discuss flow |
 
-`SPORTS_CONFIG` is the single source of truth for which sports/leagues are wired up: `mlb`, `nba`, `nhl`, `ncaamb`. Add a new sport by appending here.
+`SPORTS_CONFIG` is the single source of truth for which sports/leagues are wired up: `mlb`, `nba`, `wnba`, `nhl`, `ncaamb`. Add a new sport by appending here.
+
+**Gotcha when adding a sport:** `teamLogoUrl` has a `pro` allowlist — leagues NOT in it fall through to the NCAA *team-id* logo path and render no logo. Add the league there too (this is why `wnba` is listed).
 
 ### ESPN fetch helper
 ```js

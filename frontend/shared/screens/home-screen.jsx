@@ -11,6 +11,7 @@ function HomeScreen({ onSelectSport }) {
   const sports = [
     { key: 'mlb', label: 'MLB', full: 'Major League Baseball', active: true, season: 'Spring 2026' },
     { key: 'nba', label: 'NBA', full: 'National Basketball Association', active: true, season: 'Season 2025-26' },
+    { key: 'wnba', label: 'WNBA', full: "Women's National Basketball Association", active: true, season: 'Season 2026' },
     { key: 'nhl', label: 'NHL', full: 'National Hockey League', active: true, season: 'Season 2025-26' },
     { key: 'ncaamb', label: 'NCAAB', full: 'College Basketball', active: false, season: 'Off-season' },
   ];

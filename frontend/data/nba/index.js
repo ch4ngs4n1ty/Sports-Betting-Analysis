@@ -3,10 +3,12 @@
    NBA-only frontend helpers
    ============================================================ */
 
-async function fetchNbaPlayerGameLog(playerId, { season } = {}) {
+// Shared by NBA and WNBA — ESPN returns identical stat columns for both, so the
+// parser is the same; only the league segment of the URL changes.
+async function fetchHoopsPlayerGameLog(playerId, { season, league = 'nba', sportKey = 'nba' } = {}) {
   if (!playerId) return [];
-  const yr = season || getSeasonYear('nba');
-  const data = await espnFetch(`https://site.web.api.espn.com/apis/common/v3/sports/basketball/nba/athletes/${playerId}/gamelog?season=${yr}`);
+  const yr = season || getSeasonYear(sportKey);
+  const data = await espnFetch(`https://site.web.api.espn.com/apis/common/v3/sports/basketball/${league}/athletes/${playerId}/gamelog?season=${yr}`);
   if (!data) return [];
 
   const names = (data.names || []).map(n => String(n).toLowerCase());
@@ -69,6 +71,11 @@ async function fetchNbaPlayerGameLog(playerId, { season } = {}) {
   }
   out.sort((a, b) => String(b.rawDate).localeCompare(String(a.rawDate)));
   return out;
+}
+
+// Back-compat wrapper — existing NBA callers keep working unchanged.
+async function fetchNbaPlayerGameLog(playerId, opts = {}) {
+  return fetchHoopsPlayerGameLog(playerId, { ...opts, league: 'nba', sportKey: 'nba' });
 }
 
 async function buildNbaEdgeData(gameInfo) {
@@ -701,6 +708,7 @@ function nbaProbColor(prob) {
 }
 
 Object.assign(window, {
+  fetchHoopsPlayerGameLog,
   fetchNbaPlayerGameLog,
   fetchNbaStartingLineup,
   fetchNbaPositionalDefenseEdge,

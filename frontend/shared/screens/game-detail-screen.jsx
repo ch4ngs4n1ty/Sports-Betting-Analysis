@@ -26,6 +26,18 @@ const TABS_NBA = [
   { id: 'ai', label: '◆ AI PLAYS' },
 ];
 
+// WNBA: same basketball tabs as NBA minus the NBA-only backends (Rotowire
+// lineups + defense-vs-position). The Edge Finder projection board still works
+// because the threshold model is pure math over each player's game log.
+const TABS_WNBA = [
+  { id: 'overview', label: 'OVERVIEW' },
+  { id: 'h2h', label: 'HEAD-TO-HEAD' },
+  { id: 'form', label: 'LAST 5' },
+  { id: 'roster', label: 'ROSTERS' },
+  { id: 'edges', label: 'EDGE FINDER' },
+  { id: 'ai', label: '◆ AI PLAYS' },
+];
+
 const TABS_OTHER = [
   { id: 'overview', label: 'OVERVIEW' },
   { id: 'h2h', label: 'HEAD-TO-HEAD' },
@@ -39,7 +51,10 @@ function GameDetailScreen({ game, onBack }) {
   const [gameData, setGameData] = React.useState(null);
   const [loading, setLoading] = React.useState(true);
   const [stepIdx, setStepIdx] = React.useState(0);
-  const tabs = game.sportKey === 'mlb' ? TABS_MLB : game.sportKey === 'nba' ? TABS_NBA : TABS_OTHER;
+  const tabs = game.sportKey === 'mlb' ? TABS_MLB
+    : game.sportKey === 'nba' ? TABS_NBA
+    : game.sportKey === 'wnba' ? TABS_WNBA
+    : TABS_OTHER;
 
   React.useEffect(() => { sessionStorage.setItem('piq_tab', tab); }, [tab]);
 
@@ -77,6 +92,8 @@ function GameDetailScreen({ game, onBack }) {
           ? { mlbEdgeData: true, pitchingData: true, highContactData: true, lowHrData: true, mlbPropModel: true, mlbPitcherProps: true }
           : game.sportKey === 'nba'
           ? { nbaEdgeData: true, nbaLineupData: true, nbaDefenseEdge: true, nbaDefenseTable: true }
+          : game.sportKey === 'wnba'
+          ? { nbaEdgeData: true }
           : {};
         const baseData = { gameInfo: game, awayForm, homeForm, injuries, awayRoster, homeRoster, h2h, _loading: initLoading };
         setGameData(baseData);
@@ -136,6 +153,14 @@ function GameDetailScreen({ game, onBack }) {
             if (!cancelled) setGameData(prev => prev && { ...prev, nbaDefenseTable, _loading: { ...prev._loading, nbaDefenseTable: false } });
           }).catch(() => {
             if (!cancelled) setGameData(prev => prev && { ...prev, _loading: { ...prev._loading, nbaDefenseTable: false } });
+          });
+        } else if (game.sportKey === 'wnba') {
+          // Feeds the same NbaEdgeFinderTab board; no defense-vs-position table
+          // for WNBA, so the model runs without a matchup adjustment.
+          buildWnbaEdgeData(game).then(nbaEdgeData => {
+            if (!cancelled) setGameData(prev => prev && { ...prev, nbaEdgeData, _loading: { ...prev._loading, nbaEdgeData: false } });
+          }).catch(() => {
+            if (!cancelled) setGameData(prev => prev && { ...prev, _loading: { ...prev._loading, nbaEdgeData: false } });
           });
         }
         // Phase 2 step indicator hides when load() returns; any tab waiting
@@ -209,7 +234,9 @@ function GameDetailScreen({ game, onBack }) {
             {tab === 'roster' && <RosterTab gameData={gameData} />}
             {tab === 'lineups' && <NbaLineupTab gameData={gameData} />}
             {tab === 'def-vs-pos' && <NbaDefenseVsPositionTab gameData={gameData} />}
-            {tab === 'edges' && (game.sportKey === 'nba' ? <NbaEdgeFinderTab gameData={gameData} /> : <EdgeFinderTab gameData={gameData} />)}
+            {tab === 'edges' && ((game.sportKey === 'nba' || game.sportKey === 'wnba')
+              ? <NbaEdgeFinderTab gameData={gameData} />
+              : <EdgeFinderTab gameData={gameData} />)}
             {tab === 'pitching' && <PitchingEdgeTab gameData={gameData} />}
             {tab === 'lowhr' && <LowHrModelTab gameData={gameData} />}
             {tab === 'highcontact' && <HighContactTab gameData={gameData} />}

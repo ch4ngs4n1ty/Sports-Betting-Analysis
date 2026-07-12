@@ -24,12 +24,15 @@ const API_BASE = (() => {
 const SPORTS_CONFIG = [
   { key: 'mlb', sport: 'baseball', league: 'mlb', label: 'MLB' },
   { key: 'nba', sport: 'basketball', league: 'nba', label: 'NBA' },
+  { key: 'wnba', sport: 'basketball', league: 'wnba', label: 'WNBA' },
   { key: 'nhl', sport: 'hockey', league: 'nhl', label: 'NHL' },
   { key: 'ncaamb', sport: 'basketball', league: 'mens-college-basketball', label: 'NCAAB' },
 ];
 
 function teamLogoUrl(league, abbr, teamId) {
-  const pro = ['nba', 'nfl', 'mlb', 'nhl'];
+  // Leagues whose logos are keyed by ABBR (not team id). WNBA must be here or
+  // it falls through to the NCAA id-based path and renders no logo.
+  const pro = ['nba', 'wnba', 'nfl', 'mlb', 'nhl'];
   return pro.includes(league)
     ? `https://a.espncdn.com/i/teamlogos/${league}/500-dark/${(abbr || '').toLowerCase()}.png`
     : `https://a.espncdn.com/i/teamlogos/ncaa/500/${teamId}.png`;
