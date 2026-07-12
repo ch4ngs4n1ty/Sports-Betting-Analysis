@@ -1857,6 +1857,269 @@ async function getBatterPropModel(gamePk, options = {}) {
   return result;
 }
 
+/* ── PITCHER PROP PROJECTION MODEL (transparent) ────────
+   Pitching-tab counterpart to the batter board. For each starter, projects
+   P(K ≥ line), P(Outs ≥ line), P(ER ≥ line), P(HR ≥ line) from his per-start
+   game log + the opposing lineup's rates:
+     K    — Log5(pitcher K/BF, opponent team K%, league) → Binomial over expected BF
+     Outs — Normal fit to his outs-per-start distribution (workload/durability)
+     ER   — Poisson on (ERA/9 × expected IP), adjusted for opponent, park, weather
+     HR   — Poisson on (HR9/9 × expected IP), adjusted for park, weather, opponent
+   No ML — every input is returned for the "how this is calculated" panel.
+   Reuses log5 / binomTailGE / poissonTailGE from the batter model. */
+
+const PITCHER_PROP_LINES = {
+  k:    [4.5, 5.5, 6.5, 7.5],
+  outs: [14.5, 15.5, 16.5, 17.5, 18.5],
+  er:   [1.5, 2.5, 3.5],
+  hr:   [0.5, 1.5],
+};
+
+// erf → standard-normal CDF (Abramowitz & Stegun 7.1.26) for the outs model.
+function _erf(x) {
+  const s = x < 0 ? -1 : 1; x = Math.abs(x);
+  const t = 1 / (1 + 0.3275911 * x);
+  const y = 1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-x * x);
+  return s * y;
+}
+function _normCdf(x) { return 0.5 * (1 + _erf(x / Math.SQRT2)); }
+
+// MLB team id → abbreviation (inverts the cached abbr map, for chart labels).
+async function getTeamAbbrById() {
+  const cacheKey = 'mlb_abbr_by_id';
+  const cached = cacheGet(cacheKey);
+  if (cached) return cached;
+  const byAbbr = await getMlbTeamsByAbbr();
+  const byId = {};
+  for (const [abbr, t] of Object.entries(byAbbr)) byId[t.id] = abbr;
+  cacheSet(cacheKey, byId, 24 * 60 * 60 * 1000);
+  return byId;
+}
+
+// One season's shaped pitching log (cached). Shared by the overall per-start
+// view and the vs-opponent history so we only pull each season once.
+async function _fetchPitcherSeasonLog(pitcherId, season) {
+  const cacheKey = `pitcher_startlog_${pitcherId}_${season}`;
+  const cached = cacheGet(cacheKey);
+  if (cached) return cached;
+  let all = [];
+  try {
+    const data = await fetchJson(`${MLB_API}/people/${pitcherId}/stats?stats=gameLog&group=pitching&season=${season}`);
+    const splits = data?.stats?.[0]?.splits || [];
+    const abbrById = await getTeamAbbrById();
+    all = splits.map(s => {
+      const st = s.stat || {};
+      return {
+        rawDate: s.date || '',
+        date: s.date ? new Date(s.date + 'T00:00:00Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }) : '',
+        season,
+        oppId: s.opponent?.id ?? null,
+        opp: abbrById[s.opponent?.id] || String(s.opponent?.name || '?').split(' ').pop().slice(0, 3).toUpperCase(),
+        home: s.isHome === true,
+        gs: Number(st.gamesStarted || 0),
+        outs: Number(st.outs || 0),
+        ip: Number(st.inningsPitched || 0),
+        bf: Number(st.battersFaced || 0),
+        k: Number(st.strikeOuts || 0),
+        er: Number(st.earnedRuns || 0),
+        hr: Number(st.homeRuns || 0),
+        h: Number(st.hits || 0),
+        bb: Number(st.baseOnBalls || 0),
+      };
+    });
+    cacheSet(cacheKey, all, PITCHER_STATS_TTL);
+    return all;
+  } catch {
+    // Do NOT cache a failed fetch — caching [] here would poison the vs-team
+    // history for hours and silently drop real starts.
+    return [];
+  }
+}
+
+const _isStart = g => g.gs >= 1 || g.outs >= 9;   // drop relief cameos
+
+// Per-START log (this season). Most-recent-first, matching the convention the
+// existing GameLogChart bars use.
+async function getPitcherStartLog(pitcherId, season, count = 10) {
+  if (!pitcherId) return [];
+  const all = await _fetchPitcherSeasonLog(pitcherId, season);
+  return all.filter(_isStart).slice(-count).reverse();
+}
+
+function summarizeStarts(games) {
+  if (!games?.length) return null;
+  const sum = k => games.reduce((s, g) => s + (Number(g[k]) || 0), 0);
+  const outs = sum('outs'), ip = outs / 3;
+  const k = sum('k'), er = sum('er'), bf = sum('bf');
+  return {
+    starts: games.length,
+    ip: Math.round(ip * 10) / 10,
+    outs, bf, k, er, hr: sum('hr'), h: sum('h'), bb: sum('bb'),
+    era: ip > 0 ? Math.round((er * 9 / ip) * 100) / 100 : null,
+    k9: ip > 0 ? Math.round((k * 9 / ip) * 10) / 10 : null,
+    kPerBF: bf > 0 ? Math.round((k / bf) * 1000) / 1000 : null,
+  };
+}
+
+// This pitcher's starts against THIS opponent. A starter faces a given club
+// only 1-2× a year, so look back several seasons. Important: the SUMMARY is
+// computed over EVERY qualifying start found (so the totals/ERA are complete),
+// while only the most recent `chartCount` are returned for the bar chart.
+async function getPitcherVsTeamLog(pitcherId, oppTeamId, season, chartCount = 10, seasonsBack = 6) {
+  if (!pitcherId || !oppTeamId) return { games: [], summary: null, totalStarts: 0, seasonsSearched: 0 };
+  const seasons = [];
+  for (let i = 0; i < seasonsBack; i++) seasons.push(season - i);
+  const logs = await Promise.all(seasons.map(s => _fetchPitcherSeasonLog(pitcherId, s)));
+
+  const allVs = logs.flat()
+    .filter(g => _isStart(g) && String(g.oppId) === String(oppTeamId))
+    .sort((a, b) => String(a.rawDate).localeCompare(String(b.rawDate)));   // ascending
+
+  const games = allVs.slice(-chartCount).reverse();     // most-recent-first for the chart
+  return {
+    games,
+    summary: summarizeStarts(allVs),                    // over ALL starts, not just charted
+    totalStarts: allVs.length,
+    seasonsSearched: seasonsBack,
+    seasonSpan: allVs.length ? [allVs[0].season, allVs[allVs.length - 1].season] : null,
+  };
+}
+
+function computePitcherProps({ log, stats, arsenal, oppSplits, throws, weather, parkFactor, vsOpp }) {
+  const cur = stats?.current || {};
+  const mean = a => a.length ? a.reduce((s, x) => s + x, 0) / a.length : 0;
+  const std = a => { if (a.length < 2) return 0; const m = mean(a); return Math.sqrt(a.reduce((s, x) => s + (x - m) ** 2, 0) / (a.length - 1)); };
+
+  // ── Workload: expected outs recorded ──
+  const outsArr = log.map(g => g.outs);
+  const recentOuts = log.slice(0, 5).map(g => g.outs);   // log is most-recent-first
+  const seasonOutsPerStart = (cur.ip != null && cur.gs) ? (cur.ip * 3) / cur.gs : null;
+  let expOuts = seasonOutsPerStart != null
+    ? 0.5 * seasonOutsPerStart + 0.3 * mean(outsArr) + 0.2 * mean(recentOuts)
+    : (mean(outsArr) || 16);
+  expOuts = _clampN(expOuts, 9, 24);                      // 3–8 IP
+  const outsSd = Math.max(std(outsArr), 3.0);             // floor so short samples aren't overconfident
+  const expIP = expOuts / 3;
+
+  // ── Strikeouts: Log5(pitcher K/BF, opponent team K%, league) ──
+  const totK = log.reduce((s, g) => s + g.k, 0);
+  const totBF = log.reduce((s, g) => s + g.bf, 0);
+  const kPerBfRaw = totBF > 0 ? totK / totBF : (cur.k9 != null ? cur.k9 / LG.bf9 : LG.kpa);
+  const wBF = totBF / (totBF + 150);                      // shrink to league by sample
+  const kPerBf = wBF * kPerBfRaw + (1 - wBF) * LG.kpa;
+  const oppSide = throws === 'L' ? oppSplits?.vsL : oppSplits?.vsR;
+  const oppK = oppSide?.kPct != null ? oppSide.kPct / 100 : LG.kpa;
+  let pK = log5(kPerBf, oppK, LG.kpa);
+  const whiff = _arsenalWhiff(arsenal);
+  if (whiff != null) pK *= _clampN(whiff / LG.whiff, 0.90, 1.12);
+
+  // Nudge toward his actual K rate vs THIS opponent — but only lightly. The
+  // opponent's *current* team K-rate (above) is the roster-accurate signal;
+  // history vs the franchise is confounded by roster turnover, so cap the
+  // weight low and require a real sample.
+  const vs = vsOpp?.summary;
+  let vsOppWeight = 0;
+  if (vs && vs.bf >= 40 && vs.kPerBF != null) {
+    vsOppWeight = Math.min(vs.bf / 250, 0.15);
+    pK = (1 - vsOppWeight) * pK + vsOppWeight * vs.kPerBF;
+  }
+  pK = _clampN(pK, 0.05, 0.45);
+  const whip = cur.whip != null ? cur.whip : 1.25;
+  const expBF = Math.max(6, Math.round(expIP * (3 + whip)));   // outs + baserunners
+
+  // ── Run / HR environment ──
+  const oppOps = oppSide?.ops != null ? oppSide.ops : LG.oppOps;
+  const oppMult = _clampN(oppOps / LG.oppOps, 0.85, 1.20);
+  const pf = parkFactor == null ? 100 : parkFactor;
+  const dome = weather?.roofType && /indoor|closed|dome/i.test(weather.roofType);
+  const temp = weather?.temp, windStr = String(weather?.wind || '');
+  const windOut = /out|to (cf|rf|lf)/i.test(windStr), windIn = /\bin\b|from (cf|rf|lf)/i.test(windStr);
+  let wx = 1;
+  if (!dome) {
+    if (temp >= 80) wx += 0.02; else if (temp <= 50) wx -= 0.02;
+    if (windOut) wx += 0.02; else if (windIn) wx -= 0.02;
+  }
+  const runMult = oppMult * (1 + (pf - 100) * 0.002) * wx;
+  const hrMult = oppMult * (pf / 100) * wx;
+  const era = cur.era != null ? cur.era : 4.20;
+  const hr9 = cur.hrPer9 != null ? cur.hrPer9 : 1.20;
+  const lamER = Math.max(0.05, (era / 9) * expIP * runMult);
+  const lamHR = Math.max(0.02, (hr9 / 9) * expIP * hrMult);
+
+  const tail = (lines, fn) => Object.fromEntries(lines.map(L => [String(L), fn(L)]));
+  return {
+    predictions: {
+      k:    tail(PITCHER_PROP_LINES.k,    L => binomTailGE(expBF, pK, Math.ceil(L))),
+      outs: tail(PITCHER_PROP_LINES.outs, L => _clampN(1 - _normCdf((L - expOuts) / outsSd), 0, 1)),
+      er:   tail(PITCHER_PROP_LINES.er,   L => poissonTailGE(lamER, Math.ceil(L))),
+      hr:   tail(PITCHER_PROP_LINES.hr,   L => poissonTailGE(lamHR, Math.ceil(L))),
+    },
+    inputs: {
+      k:    { kPerBF: _r(kPerBf, 3), oppTeamKrate: _r(oppK, 3), pK: _r(pK, 3), expBF, whiffPct: whiff != null ? _r(whiff, 1) : null,
+              vsOppKperBF: vs?.kPerBF ?? null, vsOppStarts: vs?.starts ?? 0, vsOppWeight: _r(vsOppWeight, 2) },
+      outs: { expOuts: _r(expOuts, 1), expIP: _r(expIP, 2), outsSd: _r(outsSd, 1), seasonOutsPerStart: seasonOutsPerStart != null ? _r(seasonOutsPerStart, 1) : null },
+      er:   { era: _r(era, 2), lambda: _r(lamER, 2), oppOPS: _r(oppOps, 3), runMult: _r(runMult, 3) },
+      hr:   { hrPer9: _r(hr9, 2), lambda: _r(lamHR, 2), parkFactor: pf, hrMult: _r(hrMult, 3) },
+    },
+    expOuts: _r(expOuts, 1), expIP: _r(expIP, 2), expBF,
+  };
+}
+
+async function getPitcherPropModel(gamePk, options = {}) {
+  const cacheKey = `pprops_${gamePk}`;
+  if (!options.refresh) { const c = cacheGet(cacheKey); if (c) return c; }
+
+  const season = currentMlbSeason();
+  const lineups = await getGameLineups(gamePk, options);
+  const weather = await fetchGameWeather(gamePk);
+  const parkFactor = parkHrFactor(weather?.venue);
+
+  const buildSide = async (side) => {
+    const oppSide = side === 'away' ? 'home' : 'away';
+    const sp = lineups[side]?.probablePitcher;
+    if (!sp) return null;
+    const oppTeamId = lineups[oppSide]?.teamId;
+    const [stats, arsenal, log, oppSplits, vsOpp] = await Promise.all([
+      getPitcherStats(sp.id, season),
+      getPitcherArsenal(sp.id, season),
+      getPitcherStartLog(sp.id, season, 10),
+      getTeamHandSplits(oppTeamId, season),
+      getPitcherVsTeamLog(sp.id, oppTeamId, season, 10, 6),
+    ]);
+    const throws = stats?.throws || null;
+    const p = computePitcherProps({ log, stats, arsenal, oppSplits, throws, weather, parkFactor, vsOpp });
+    const cur = stats?.current || {};
+    return {
+      side, id: sp.id, name: sp.name, throws,
+      opponent: lineups[oppSide]?.teamName || null,
+      vsOpp,
+      season: {
+        era: cur.era ?? null, whip: cur.whip ?? null, k9: cur.k9 ?? null,
+        hrPer9: cur.hrPer9 ?? null, ip: cur.ip ?? null, gs: cur.gs ?? null, record: cur.record ?? null,
+      },
+      predictions: p.predictions,
+      inputs: p.inputs,
+      expOuts: p.expOuts, expIP: p.expIP, expBF: p.expBF,
+      gameLog: log,
+      starts: log.length,
+      confidence: log.length >= 8 ? 'HIGH' : log.length >= 4 ? 'MED' : 'LOW',
+    };
+  };
+
+  const [away, home] = await Promise.all([buildSide('away'), buildSide('home')]);
+  const result = {
+    gamePk, season,
+    lines: PITCHER_PROP_LINES,
+    park: { venue: weather?.venue || null, factor: parkFactor ?? null },
+    weather,
+    away, home,
+    source: 'Log5 K-matchup + Binomial/Normal/Poisson · MLB Stats API game logs + Savant arsenal',
+    cachedAt: new Date().toISOString(),
+  };
+  cacheSet(cacheKey, result, LIVE_CACHE_TTL);
+  return result;
+}
+
 module.exports = {
   getGames,
   getGameLineups,
@@ -1869,4 +2132,5 @@ module.exports = {
   getLowHrReport,
   scoreF5,
   getBatterPropModel,
+  getPitcherPropModel,
 };

@@ -98,6 +98,23 @@ async function fetchMlbPropModel(gameInfo, lineups, pitchers) {
   }
 }
 
+async function fetchMlbPitcherProps(gameInfo, pitchers) {
+  try {
+    const date = mlbBusinessDate(gameInfo.date);
+    const url = `${API_BASE}/api/mlb/pitcher-props`
+      + `?away=${encodeURIComponent(gameInfo.awayFull)}`
+      + `&home=${encodeURIComponent(gameInfo.homeFull)}`
+      + (date ? `&date=${date}` : '')
+      + (pitchers?.away?.name ? `&awayPitcher=${encodeURIComponent(pitchers.away.name)}` : '')
+      + (pitchers?.home?.name ? `&homePitcher=${encodeURIComponent(pitchers.home.name)}` : '');
+    const r = await fetch(url);
+    if (!r.ok) return null;
+    return await r.json();
+  } catch {
+    return null;
+  }
+}
+
 // Slate research-readiness for MLB cards (one backend call = SP + lineup state
 // for every game on the date). Degrades to [] if the backend is unavailable.
 async function fetchMlbSlateReadiness(date, attempt = 0) {
@@ -299,6 +316,7 @@ async function fetchMlbStarters(gameInfo) {
 
 Object.assign(window, {
   fetchGameBvp, fetchWeather, fetchHighContactReport, fetchLowHrReport, fetchMlbPropModel,
+  fetchMlbPitcherProps,
   fetchMlbSlateReadiness, findMlbReadiness,
   fetchPlayerGameLog, attachWeatherToGameLog,
   buildMlbEdgeData, fetchMlbStarters, MLB_TEAM_ABBR,

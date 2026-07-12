@@ -176,3 +176,10 @@
 [UNCAUGHT] listen EADDRINUSE: address already in use 0.0.0.0:3001
 [7/3/2026, 11:43:30 AM MDT] PlayIQ server running on http://localhost:3001
 [UNCAUGHT] listen EADDRINUSE: address already in use 0.0.0.0:3001
+[7/11/2026, 1:25:41 PM MDT] PlayIQ server running on http://localhost:3001
+[7/12/2026, 12:26:09 PM MDT] PlayIQ server running on http://localhost:3001
+[UNCAUGHT] listen EADDRINUSE: address already in use 0.0.0.0:3001
+[7/12/2026, 12:35:54 PM MDT] PlayIQ server running on http://localhost:3001
+[UNCAUGHT] listen EADDRINUSE: address already in use 0.0.0.0:3001
+[7/12/2026, 12:47:35 PM MDT] PlayIQ server running on http://localhost:3001
+[UNCAUGHT] listen EADDRINUSE: address already in use 0.0.0.0:3001

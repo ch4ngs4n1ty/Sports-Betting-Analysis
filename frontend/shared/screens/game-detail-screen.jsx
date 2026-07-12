@@ -74,7 +74,7 @@ function GameDetailScreen({ game, onBack }) {
 
         // Render the page now — user can read Overview while extras load
         const initLoading = game.sportKey === 'mlb'
-          ? { mlbEdgeData: true, pitchingData: true, highContactData: true, lowHrData: true, mlbPropModel: true }
+          ? { mlbEdgeData: true, pitchingData: true, highContactData: true, lowHrData: true, mlbPropModel: true, mlbPitcherProps: true }
           : game.sportKey === 'nba'
           ? { nbaEdgeData: true, nbaLineupData: true, nbaDefenseEdge: true, nbaDefenseTable: true }
           : {};
@@ -91,11 +91,12 @@ function GameDetailScreen({ game, onBack }) {
             try {
               const starterData = await fetchMlbStarters(game);
               // BvP, high-contact, low-HR, and the prop model share lineup/pitcher inputs.
-              const [bvpData, highContactData, lowHrData, mlbPropModel] = await Promise.all([
+              const [bvpData, highContactData, lowHrData, mlbPropModel, mlbPitcherProps] = await Promise.all([
                 fetchGameBvp(game, starterData.lineups, starterData.pitchers),
                 fetchHighContactReport(game, starterData.lineups, starterData.pitchers),
                 fetchLowHrReport(game, starterData.lineups, starterData.pitchers),
                 fetchMlbPropModel(game, starterData.lineups, starterData.pitchers),
+                fetchMlbPitcherProps(game, starterData.pitchers),
               ]);
               const mlbEdgeData = await buildMlbEdgeData(game, bvpData);
               if (cancelled) return;
@@ -105,11 +106,12 @@ function GameDetailScreen({ game, onBack }) {
                 highContactData,
                 lowHrData,
                 mlbPropModel,
-                _loading: { ...prev._loading, mlbEdgeData: false, pitchingData: false, highContactData: false, lowHrData: false, mlbPropModel: false },
+                mlbPitcherProps,
+                _loading: { ...prev._loading, mlbEdgeData: false, pitchingData: false, highContactData: false, lowHrData: false, mlbPropModel: false, mlbPitcherProps: false },
               });
             } catch (e) {
               console.error('MLB extras failed', e);
-              if (!cancelled) setGameData(prev => prev && { ...prev, _loading: { ...prev._loading, mlbEdgeData: false, pitchingData: false, highContactData: false, lowHrData: false, mlbPropModel: false } });
+              if (!cancelled) setGameData(prev => prev && { ...prev, _loading: { ...prev._loading, mlbEdgeData: false, pitchingData: false, highContactData: false, lowHrData: false, mlbPropModel: false, mlbPitcherProps: false } });
             }
           })();
         } else if (game.sportKey === 'nba') {

@@ -17,6 +17,7 @@ const {
   getHighContactReport,
   getLowHrReport,
   getBatterPropModel,
+  getPitcherPropModel,
 } = require('./mlb/service');
 const {
   getNbaStartingLineups,
@@ -219,6 +220,27 @@ const server = http.createServer(async (req, res) => {
       const awayPitcher = url.searchParams.get('awayPitcher') || undefined;
       const homePitcher = url.searchParams.get('homePitcher') || undefined;
       const report = await getBatterPropModel(gamePk, { refresh, awayLineup, homeLineup, awayPitcher, homePitcher });
+      return sendJson(res, report);
+    }
+
+    // GET /api/mlb/pitcher-props?gamePk=... OR ?away=...&home=...&date=YYYY-MM-DD
+    //   Pitching-tab projection board: per starter, P(K / Outs / ER / HR ≥ line)
+    //   from his per-start game log + the opposing lineup's rates, plus the
+    //   per-start log itself for the bar charts. Add &refresh=1.
+    if (path === '/api/mlb/pitcher-props') {
+      let gamePk = url.searchParams.get('gamePk');
+      if (!gamePk) {
+        const away = url.searchParams.get('away');
+        const home = url.searchParams.get('home');
+        const date = url.searchParams.get('date') || undefined;
+        if (!away || !home) return sendError(res, 'gamePk or away+home team names required');
+        gamePk = await findGamePkByTeams(away, home, date);
+        if (!gamePk) return sendError(res, `No game found for ${away} @ ${home}`, 404);
+      }
+      const refresh = url.searchParams.get('refresh') === '1';
+      const awayPitcher = url.searchParams.get('awayPitcher') || undefined;
+      const homePitcher = url.searchParams.get('homePitcher') || undefined;
+      const report = await getPitcherPropModel(gamePk, { refresh, awayPitcher, homePitcher });
       return sendJson(res, report);
     }
 

@@ -306,8 +306,29 @@ function EdgeFinderTab({ gameData }) {
   );
 }
 
+const MLB_PITCHER_STAT_LABELS = { k: 'STRIKEOUTS', outs: 'OUTS', er: 'EARNED RUNS', hr: 'HOME RUNS' };
+const MLB_PITCHER_LINES = { k: [4.5, 5.5, 6.5, 7.5], outs: [14.5, 15.5, 16.5, 17.5, 18.5], er: [1.5, 2.5, 3.5], hr: [0.5, 1.5] };
+const MLB_PITCHER_LOG_STATS = [
+  { key: 'k', label: 'K' }, { key: 'outs', label: 'OUTS' }, { key: 'er', label: 'ER' },
+  { key: 'hr', label: 'HR' }, { key: 'h', label: 'H' }, { key: 'bb', label: 'BB' },
+];
+
+// Bar colors from the PITCHER's perspective: K/outs high = good; ER/HR/H/BB high = bad.
+function mlbPitcherStatColor(v, key) {
+  if (key === 'k')    return v >= 8 ? 'var(--green)' : v >= 6 ? 'var(--gold)' : v >= 4 ? 'var(--cyan)' : 'var(--orange)';
+  if (key === 'outs') return v >= 18 ? 'var(--green)' : v >= 15 ? 'var(--gold)' : v >= 12 ? 'var(--cyan)' : 'var(--orange)';
+  if (key === 'er')   return v === 0 ? 'var(--green)' : v <= 2 ? 'var(--gold)' : v <= 3 ? 'var(--cyan)' : 'var(--orange)';
+  if (key === 'hr')   return v === 0 ? 'var(--green)' : v === 1 ? 'var(--gold)' : 'var(--orange)';
+  if (key === 'h')    return v <= 4 ? 'var(--green)' : v <= 6 ? 'var(--gold)' : v <= 8 ? 'var(--cyan)' : 'var(--orange)';
+  if (key === 'bb')   return v <= 1 ? 'var(--green)' : v <= 2 ? 'var(--gold)' : v <= 3 ? 'var(--cyan)' : 'var(--orange)';
+  return 'var(--muted)';
+}
+
 function PitchingEdgeTab({ gameData }) {
-  const { gameInfo, pitchingData } = gameData;
+  const { gameInfo, pitchingData, mlbPitcherProps } = gameData;
+  const [pStat, setPStat] = React.useState('k');
+  const [pLine, setPLine] = React.useState(4.5);
+
   if (!pitchingData) {
     if (gameData?._loading?.pitchingData !== false) return <TabLoader source="Stats" label="Loading probable pitchers..." rows={2} />;
     return <div style={emptyMsg}>Pitching data unavailable.</div>;
@@ -340,13 +361,236 @@ function PitchingEdgeTab({ gameData }) {
     );
   };
 
+  // ── Pitcher projection board (transparent Log5 / Binomial / Normal / Poisson) ──
+  const PitcherPropBoard = () => {
+    const [openId, setOpenId] = React.useState(null);
+    if (!mlbPitcherProps) {
+      if (gameData?._loading?.mlbPitcherProps !== false) return <TabLoader source="MLB Stats + Savant" label="Projecting pitcher props..." rows={3} />;
+      return null;
+    }
+    const LINES = mlbPitcherProps.lines || MLB_PITCHER_LINES;
+    const sides = ['away', 'home'].map(s => mlbPitcherProps[s]).filter(Boolean);
+    if (!sides.length) return null;
+
+    const rows = sides
+      .map(p => ({ ...p, prob: p.predictions?.[pStat]?.[String(pLine)] }))
+      .filter(p => p.prob != null)
+      .sort((a, b) => b.prob - a.prob);
+    const abbrFor = side => side === 'away' ? gameInfo.awayAbbr : gameInfo.homeAbbr;
+    const colorFor = side => side === 'away' ? 'var(--cyan)' : '#ffd060';
+    const fmtOdds = p => p == null ? '—' : p > 0.5 ? `-${Math.round(100 * p / (1 - p))}` : `+${Math.round(100 * (1 - p) / p)}`;
+    const park = mlbPitcherProps.park || {};
+
+    const Inputs = ({ p }) => {
+      const i = p.inputs?.[pStat] || {};
+      const chips = pStat === 'k'
+        ? [['pitcher K/BF', i.kPerBF], ['opponent team K-rate', i.oppTeamKrate], ['→ P(K)/batter', i.pK], ['expected batters faced', i.expBF], ['arsenal whiff%', i.whiffPct],
+           ...(i.vsOppStarts ? [[`K/BF vs them (${i.vsOppStarts} GP)`, i.vsOppKperBF], ['vs-them weight', i.vsOppWeight]] : [])]
+        : pStat === 'outs'
+        ? [['expected outs', i.expOuts], ['expected IP', i.expIP], ['std dev', i.outsSd], ['season outs/start', i.seasonOutsPerStart]]
+        : pStat === 'er'
+        ? [['season ERA', i.era], ['→ λ (expected ER)', i.lambda], ['opponent OPS', i.oppOPS], ['run env ×', i.runMult]]
+        : [['season HR/9', i.hrPer9], ['→ λ (expected HR)', i.lambda], ['park factor', i.parkFactor], ['HR env ×', i.hrMult]];
+      const method = pStat === 'k'
+        ? 'Log5(pitcher K/BF, opponent team K-rate, league) → Binomial tail over expected batters faced'
+        : pStat === 'outs'
+        ? 'Normal fit to his outs-per-start distribution (workload/durability)'
+        : pStat === 'er'
+        ? 'Poisson: λ = (ERA ÷ 9) × expected IP, adjusted for opponent / park / weather'
+        : 'Poisson: λ = (HR9 ÷ 9) × expected IP, adjusted for park / weather / opponent';
+      return (
+        <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid rgba(255,255,255,0.04)', animation: 'fadeUp 0.2s ease' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 6 }}>
+            {chips.map(([l, v]) => (
+              <span key={l} style={{ fontSize: 8.5, fontFamily: 'Space Mono, monospace', color: 'var(--text)', padding: '2px 6px', background: 'rgba(255,255,255,0.03)', borderRadius: 2, border: '1px solid rgba(255,255,255,0.05)' }}>
+                <span style={{ color: 'var(--dim)' }}>{l} </span>{v == null ? '—' : v}
+              </span>
+            ))}
+            <span style={{ fontSize: 8.5, fontFamily: 'Space Mono, monospace', color: 'var(--muted)', padding: '2px 6px', borderRadius: 2, border: '1px solid rgba(255,255,255,0.05)' }}>
+              from {p.starts} starts
+            </span>
+          </div>
+          <div style={{ fontSize: 8.5, color: 'var(--muted)', fontFamily: 'Space Mono, monospace', lineHeight: 1.5 }}>
+            <span style={{ color: 'var(--dim)' }}>METHOD </span>{method}
+          </div>
+        </div>
+      );
+    };
+
+    return (
+      <HudCard style={{ padding: '16px 18px', marginBottom: 20 }} accent="#00ff88">
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
+          <span style={{ fontSize: 12, fontFamily: 'Orbitron, monospace', fontWeight: 900, color: '#00ff88', letterSpacing: '0.12em' }}>◆ PITCHER PROJECTION MODEL</span>
+          <span style={{ fontSize: 9, fontFamily: 'Space Mono, monospace', color: 'var(--muted)', letterSpacing: '0.1em' }}>likelihood to clear the line</span>
+          <span style={{ marginLeft: 'auto', fontSize: 9, fontFamily: 'Space Mono, monospace', color: 'var(--dim)' }}>
+            {park.venue || ''}{park.factor != null ? ` · park ${park.factor}` : ''}
+          </span>
+        </div>
+
+        <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center', marginBottom: 14 }}>
+          <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+            {['k', 'outs', 'er', 'hr'].map(s => (
+              <button key={s} onClick={() => { setPStat(s); setPLine((LINES[s] || [])[0]); }}
+                style={{ padding: '5px 12px', background: pStat === s ? 'rgba(0,255,136,0.12)' : 'transparent',
+                  border: `1px solid ${pStat === s ? 'rgba(0,255,136,0.4)' : 'rgba(255,255,255,0.08)'}`,
+                  color: pStat === s ? '#00ff88' : 'var(--muted)', fontFamily: 'Orbitron, monospace', fontWeight: 700,
+                  fontSize: 10, cursor: 'pointer', borderRadius: 2, letterSpacing: '0.08em' }}>{MLB_PITCHER_STAT_LABELS[s]}</button>
+            ))}
+          </div>
+          <div style={{ width: 1, height: 22, background: 'rgba(255,255,255,0.08)' }} />
+          <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+            {(LINES[pStat] || []).map(line => (
+              <button key={line} onClick={() => setPLine(line)}
+                style={{ padding: '5px 11px', background: pLine === line ? 'rgba(0,212,255,0.12)' : 'transparent',
+                  border: `1px solid ${pLine === line ? 'rgba(0,212,255,0.4)' : 'rgba(255,255,255,0.08)'}`,
+                  color: pLine === line ? 'var(--cyan)' : 'var(--dim)', fontFamily: 'Space Mono, monospace',
+                  fontSize: 10, cursor: 'pointer', borderRadius: 2 }}>{line}+</button>
+            ))}
+          </div>
+          <span style={{ marginLeft: 'auto', fontSize: 13, fontFamily: 'Orbitron, monospace', fontWeight: 700, color: 'var(--text)', letterSpacing: '0.06em' }}>
+            {pLine}+ {MLB_PITCHER_STAT_LABELS[pStat]}
+          </span>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column' }}>
+          {rows.map((p, i) => {
+            const c = mlbPropColor(p.prob);
+            const pct = Math.round(p.prob * 100);
+            const tc = colorFor(p.side);
+            const isOpen = openId === p.id;
+            const confColor = p.confidence === 'HIGH' ? '#00ff88' : p.confidence === 'MED' ? '#ffd060' : 'var(--dim)';
+            return (
+              <div key={p.id || i} style={{ padding: '10px', borderRadius: 3, background: i % 2 ? 'transparent' : 'rgba(255,255,255,0.02)' }}>
+                <div onClick={() => setOpenId(isOpen ? null : p.id)} style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', cursor: 'pointer', userSelect: 'none' }}>
+                  <span style={{ width: 20, textAlign: 'center', fontSize: 14, fontFamily: 'Orbitron, monospace', fontWeight: 900, color: i === 0 ? '#00ff88' : 'var(--dim)' }}>{i + 1}</span>
+                  <div style={{ flex: 1, minWidth: 160 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: 13, fontFamily: 'Space Mono, monospace', color: 'var(--text)', fontWeight: 700 }}>{p.name}</span>
+                      <span style={{ fontSize: 8, padding: '1px 6px', border: `1px solid ${tc}66`, color: tc, fontFamily: 'Space Mono, monospace', borderRadius: 2 }}>
+                        {abbrFor(p.side)}{p.throws ? ` ${p.throws}HP` : ''}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 9, color: 'var(--muted)', fontFamily: 'Space Mono, monospace', marginTop: 2 }}>
+                      vs {p.opponent} · proj {p.expOuts} outs ({p.expIP} IP) · <span style={{ color: confColor }}>{p.confidence}</span>
+                      {p.vsOpp?.summary && (
+                        <span style={{ color: '#ffd060' }}>
+                          {' · '}{p.vsOpp.summary.starts}GP vs them: {p.vsOpp.summary.k9} K/9, {p.vsOpp.summary.era} ERA
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 180, flex: 1 }}>
+                    <div style={{ flex: 1, height: 8, background: 'rgba(255,255,255,0.05)', borderRadius: 4, overflow: 'hidden' }}>
+                      <div style={{ height: '100%', width: `${pct}%`, background: c, boxShadow: `0 0 8px ${c}88`, borderRadius: 4, transition: 'width 0.5s cubic-bezier(0.16,1,0.3,1)' }} />
+                    </div>
+                    <span style={{ width: 46, textAlign: 'right', fontSize: 17, fontFamily: 'Orbitron, monospace', fontWeight: 900, color: c }}>{pct}%</span>
+                    <span style={{ width: 48, textAlign: 'right', fontSize: 10, fontFamily: 'Space Mono, monospace', color: 'var(--muted)' }}>{fmtOdds(p.prob)}</span>
+                  </div>
+                </div>
+                {isOpen && <Inputs p={p} />}
+              </div>
+            );
+          })}
+        </div>
+
+        <div style={{ fontSize: 9, color: 'var(--muted)', fontFamily: 'Space Mono, monospace', marginTop: 12, lineHeight: 1.6 }}>
+          Shows P(stat ≥ line). For K and OUTS a high % means the pitcher goes deep / misses bats; for ER and HR a high % means he's
+          likely to get <span style={{ color: '#ff8a55' }}>hit hard</span> — read those as the OVER, not as "good". Tap a row for the math. Fair odds only, not a guarantee.
+        </div>
+      </HudCard>
+    );
+  };
+
+  const PitcherLogCard = ({ p, abbr, color }) => {
+    if (!p?.gameLog?.length) return null;
+    return (
+      <HudCard style={{ padding: '16px 18px' }} accent={color}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+          <span style={{ fontSize: 11, fontFamily: 'Space Mono, monospace', fontWeight: 700, color: 'var(--text)' }}>{p.name}</span>
+          <span style={{ fontSize: 9, padding: '1px 6px', border: `1px solid ${color}66`, color, fontFamily: 'Space Mono, monospace', borderRadius: 2 }}>{abbr}</span>
+          <span style={{ fontSize: 9, color: 'var(--dim)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.12em' }}>
+            LAST {p.gameLog.length} STARTS
+          </span>
+        </div>
+        <GameLogChart games={p.gameLog} stats={MLB_PITCHER_LOG_STATS} defaultStat="k"
+          emptyLabel="NO STARTS LOGGED" accent={color} colorFor={mlbPitcherStatColor} />
+      </HudCard>
+    );
+  };
+
+  // Head-to-head: this pitcher's recent starts against tonight's opponent.
+  const PitcherVsOppCard = ({ p, abbr, color }) => {
+    if (!p) return null;
+    const games = p.vsOpp?.games || [];
+    const s = p.vsOpp?.summary;
+    return (
+      <HudCard style={{ padding: '16px 18px' }} accent={color}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
+          <span style={{ fontSize: 11, fontFamily: 'Space Mono, monospace', fontWeight: 700, color: 'var(--text)' }}>{p.name}</span>
+          <span style={{ fontSize: 9, padding: '1px 6px', border: `1px solid ${color}66`, color, fontFamily: 'Space Mono, monospace', borderRadius: 2 }}>{abbr}</span>
+          <span style={{ fontSize: 9, color: '#ffd060', fontFamily: 'Space Mono, monospace', letterSpacing: '0.12em' }}>
+            vs {p.opponent?.toUpperCase() || 'OPP'}
+          </span>
+          {p.vsOpp?.seasonSpan && (
+            <span style={{ fontSize: 9, color: 'var(--dim)', fontFamily: 'Space Mono, monospace' }}>
+              {p.vsOpp.seasonSpan[0] === p.vsOpp.seasonSpan[1]
+                ? p.vsOpp.seasonSpan[0]
+                : `${p.vsOpp.seasonSpan[0]}–${p.vsOpp.seasonSpan[1]}`}
+            </span>
+          )}
+          {p.vsOpp?.totalStarts > (p.vsOpp?.games?.length || 0) && (
+            <span style={{ fontSize: 8.5, color: 'var(--dim)', fontFamily: 'Space Mono, monospace' }}>
+              · chart shows last {p.vsOpp.games.length} of {p.vsOpp.totalStarts}
+            </span>
+          )}
+        </div>
+        {s ? (
+          <>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 6, marginBottom: 14 }}>
+              {[['STARTS', s.starts], ['IP', s.ip], ['K', s.k], ['ERA', s.era != null ? s.era.toFixed(2) : '—'], ['K/9', s.k9 ?? '—']].map(([l, v]) => (
+                <div key={l} style={{ textAlign: 'center', padding: '7px 4px', background: 'var(--surface)', borderRadius: 3 }}>
+                  <div style={{ fontSize: 8, color: 'var(--dim)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.1em', marginBottom: 3 }}>{l}</div>
+                  <div style={{ fontSize: 14, fontFamily: 'Orbitron, monospace', color, fontWeight: 700 }}>{v}</div>
+                </div>
+              ))}
+            </div>
+            <GameLogChart games={games} stats={MLB_PITCHER_LOG_STATS} defaultStat="k"
+              emptyLabel="NO STARTS VS THIS TEAM" accent={color} colorFor={mlbPitcherStatColor} />
+          </>
+        ) : (
+          <div style={{ fontSize: 10, color: 'var(--dim)', fontFamily: 'Space Mono, monospace', padding: '14px 0', letterSpacing: '0.08em' }}>
+            HAS NOT FACED THIS TEAM (last 3 seasons)
+          </div>
+        )}
+      </HudCard>
+    );
+  };
+
   return (
     <div style={{ padding: '20px 0' }}>
+      <PitcherPropBoard />
+
       <SectionHeader label="STARTING PITCHERS" sub="Season ERA · WHIP · Record" />
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 24 }}>
         <PitcherCard p={pitchers?.away} abbr={gameInfo.awayAbbr} color="var(--cyan)" />
         <PitcherCard p={pitchers?.home} abbr={gameInfo.homeAbbr} color="#ffd060" />
       </div>
+
+      {mlbPitcherProps && (mlbPitcherProps.away || mlbPitcherProps.home) && (
+        <>
+          <SectionHeader label="HEAD-TO-HEAD vs TONIGHT'S OPPONENT" sub="Every start against this exact team (last 6 seasons) · totals cover all of them · roster turnover makes this context, not gospel" />
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))', gap: 12, marginBottom: 24 }}>
+            <PitcherVsOppCard p={mlbPitcherProps.away} abbr={gameInfo.awayAbbr} color="var(--cyan)" />
+            <PitcherVsOppCard p={mlbPitcherProps.home} abbr={gameInfo.homeAbbr} color="#ffd060" />
+          </div>
+
+          <SectionHeader label="PER-START HISTORY (ALL OPPONENTS)" sub="K · Outs · ER · HR · H · BB over recent starts" />
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))', gap: 12 }}>
+            <PitcherLogCard p={mlbPitcherProps.away} abbr={gameInfo.awayAbbr} color="var(--cyan)" />
+            <PitcherLogCard p={mlbPitcherProps.home} abbr={gameInfo.homeAbbr} color="#ffd060" />
+          </div>
+        </>
+      )}
     </div>
   );
 }
