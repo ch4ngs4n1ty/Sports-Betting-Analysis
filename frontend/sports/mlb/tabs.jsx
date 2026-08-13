@@ -1304,4 +1304,305 @@ function LowHrModelTab({ gameData }) {
   );
 }
 
-Object.assign(window, { EdgeFinderTab, PitchingEdgeTab, HighContactTab, LowHrModelTab });
+/* ── MLB LINEUP — 3D FIELD VIEW ──────────────────────────
+   Places each hitter's card at the fielding position they're starting at,
+   on a perspective-tilted diamond. The FIELD is rotated in 3D (rotateX) but
+   each card is counter-rotated by the same angle so headshots/text stay
+   crisp and the cards remain real, clickable DOM — readable at any tilt and
+   fast on mobile (no WebGL). DH / PH / PR don't field, so they go to a
+   dugout strip instead of being faked onto a position. */
+
+const MLB_FIELD_SPOTS = [
+  { pos: 'CF', x: 50, y: 13 },
+  { pos: 'LF', x: 16, y: 24 },
+  { pos: 'RF', x: 84, y: 24 },
+  { pos: 'SS', x: 38, y: 43 },
+  { pos: '2B', x: 62, y: 43 },
+  { pos: '3B', x: 26, y: 61 },
+  { pos: '1B', x: 74, y: 61 },
+  { pos: 'P',  x: 50, y: 64 },
+  { pos: 'C',  x: 50, y: 94 },
+];
+const MLB_FIELD_POS_SET = new Set(MLB_FIELD_SPOTS.map(s => s.pos));
+const MLB_TILT_PRESETS = [['BROADCAST', 58], ['ANGLED', 36], ['OVERHEAD', 6]];
+const mlbHeadshot = id => id
+  ? `https://img.mlbstatic.com/mlb-photos/image/upload/d_people:generic:headshot:67:current/w_426,q_auto:best/v1/people/${id}/headshot/67/current`
+  : null;
+const mlbLastName = n => String(n || '').trim().split(/\s+/).slice(-1)[0] || '—';
+
+// Mowing stripes: wedges radiating from home plate, clipped to fair territory.
+function mlbGrassWedges() {
+  const hx = 50, hy = 88, R = 130, out = [];
+  for (let a = -46; a < 46; a += 11.5) {
+    const p = deg => [hx + R * Math.sin(deg * Math.PI / 180), hy - R * Math.cos(deg * Math.PI / 180)];
+    const [x1, y1] = p(a), [x2, y2] = p(a + 11.5);
+    out.push(`M ${hx},${hy} L ${x1.toFixed(1)},${y1.toFixed(1)} L ${x2.toFixed(1)},${y2.toFixed(1)} Z`);
+  }
+  return out;
+}
+
+function MlbLineupFieldTab({ gameData }) {
+  const { gameInfo, mlbLineups, mlbPropModel } = gameData;
+  const [side, setSide] = React.useState('away');
+  const [tilt, setTilt] = React.useState(58);
+  const [selId, setSelId] = React.useState(null);
+
+  if (!mlbLineups) {
+    if (gameData?._loading?.mlbLineups !== false) return <TabLoader source="MLB Stats" label="Loading lineup card..." rows={3} />;
+    return <div style={emptyMsg}>Lineup data unavailable.</div>;
+  }
+
+  const team = mlbLineups[side] || {};
+  const lineup = team.lineup || [];
+  const accent = side === 'away' ? 'var(--cyan)' : '#ffd060';
+  const accentRaw = side === 'away' ? '#00d4ff' : '#ffd060';
+  const abbr = side === 'away' ? gameInfo.awayAbbr : gameInfo.homeAbbr;
+  const posted = lineup.length >= 9;
+
+  // Slot each hitter onto the field; non-fielders (DH/PH/PR) go to the dugout.
+  const byPos = {};
+  const dugout = [];
+  for (const b of lineup) {
+    const p = String(b.position || '').toUpperCase();
+    if (MLB_FIELD_POS_SET.has(p) && !byPos[p]) byPos[p] = b;
+    else dugout.push(b);
+  }
+  if (!byPos.P && team.probablePitcher) {
+    byPos.P = { ...team.probablePitcher, position: 'P', order: null, isSP: true };
+  }
+
+  const propsFor = id => (mlbPropModel?.[side] || []).find(b => String(b.id) === String(id)) || null;
+  const selected = selId
+    ? (lineup.find(b => String(b.id) === String(selId))
+       || (byPos.P && String(byPos.P.id) === String(selId) ? byPos.P : null))
+    : null;
+
+  const FieldCard = ({ spot, player, idx }) => {
+    const isSel = player && String(player.id) === String(selId);
+    const size = player ? 40 : 26;
+    return (
+      <div style={{ position: 'absolute', left: `${spot.x}%`, top: `${spot.y}%`, width: 0, height: 0, transformStyle: 'preserve-3d' }}>
+        {/* shadow stays flat on the grass — sells the depth */}
+        <div style={{ position: 'absolute', left: -22, top: -5, width: 44, height: 11, borderRadius: '50%',
+          background: 'rgba(0,0,0,0.5)', filter: 'blur(3px)', pointerEvents: 'none' }} />
+        <div
+          onClick={() => player && setSelId(isSel ? null : String(player.id))}
+          title={player ? `${player.name} · ${spot.pos}${player.order ? ` · bats ${player.order}` : ''}` : `${spot.pos} — not posted`}
+          style={{
+            position: 'absolute', bottom: 0, left: 0,
+            transform: `translateX(-50%) rotateX(-${tilt}deg) scale(${isSel ? 1.12 : 1})`,
+            transformOrigin: 'center bottom',
+            transition: 'transform 0.25s cubic-bezier(0.16,1,0.3,1)',
+            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3,
+            cursor: player ? 'pointer' : 'default', userSelect: 'none',
+            animation: `fadeUp 0.4s ease ${idx * 45}ms backwards`,
+          }}>
+          {player ? (
+            <>
+              <div style={{ position: 'relative' }}>
+                <div style={{ width: size, height: size, borderRadius: '50%', overflow: 'hidden',
+                  border: `2px solid ${isSel ? accentRaw : accentRaw + '99'}`, background: 'var(--card)',
+                  boxShadow: isSel ? `0 0 16px ${accentRaw}cc` : `0 0 8px ${accentRaw}44` }}>
+                  <img src={mlbHeadshot(player.id)} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                    onError={e => { e.target.style.display = 'none'; }} />
+                </div>
+                {player.order && (
+                  <div style={{ position: 'absolute', top: -4, left: -6, width: 16, height: 16, borderRadius: '50%',
+                    background: 'var(--bg)', border: `1px solid ${accentRaw}`, color: accentRaw,
+                    fontFamily: 'Orbitron, monospace', fontSize: 9, fontWeight: 700,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{player.order}</div>
+                )}
+                {player.isSP && (
+                  <div style={{ position: 'absolute', top: -4, left: -8, padding: '0 4px', borderRadius: 2,
+                    background: 'var(--bg)', border: '1px solid rgba(0,255,136,0.5)', color: '#00ff88',
+                    fontFamily: 'Orbitron, monospace', fontSize: 7, fontWeight: 700, letterSpacing: '0.06em' }}>SP</div>
+                )}
+              </div>
+              <div style={{ padding: '1px 5px', borderRadius: 2, background: 'rgba(5,8,15,0.88)',
+                border: `1px solid ${accentRaw}55`, whiteSpace: 'nowrap' }}>
+                <span style={{ fontSize: 8.5, fontFamily: 'Space Mono, monospace', color: 'var(--text)', fontWeight: 700 }}>
+                  {mlbLastName(player.name)}
+                </span>
+              </div>
+            </>
+          ) : (
+            <div style={{ width: size, height: size, borderRadius: '50%', border: '1.5px dashed rgba(255,255,255,0.18)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <span style={{ fontSize: 8, fontFamily: 'Orbitron, monospace', color: 'var(--dim)' }}>{spot.pos}</span>
+            </div>
+          )}
+          <span style={{ fontSize: 7.5, fontFamily: 'Orbitron, monospace', color: accentRaw, opacity: 0.75, letterSpacing: '0.12em' }}>
+            {spot.pos}
+          </span>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div style={{ padding: '20px 0' }}>
+      <SectionHeader label="LINEUP — FIELD VIEW"
+        sub="Every starter placed at the position they're playing · tap a card for their projection" />
+
+      {/* Controls */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
+        <div style={{ display: 'flex', gap: 5 }}>
+          {[['away', gameInfo.awayAbbr], ['home', gameInfo.homeAbbr]].map(([v, l]) => (
+            <button key={v} onClick={() => { setSide(v); setSelId(null); }}
+              style={{ padding: '6px 16px', background: side === v ? `${v === 'away' ? 'rgba(0,212,255,0.12)' : 'rgba(255,208,96,0.12)'}` : 'transparent',
+                border: `1px solid ${side === v ? (v === 'away' ? 'rgba(0,212,255,0.45)' : 'rgba(255,208,96,0.45)') : 'rgba(255,255,255,0.08)'}`,
+                color: side === v ? (v === 'away' ? 'var(--cyan)' : '#ffd060') : 'var(--muted)',
+                fontFamily: 'Orbitron, monospace', fontWeight: 700, fontSize: 11, cursor: 'pointer',
+                borderRadius: 2, letterSpacing: '0.1em' }}>{l}</button>
+          ))}
+        </div>
+        <span style={{ fontSize: 9, padding: '3px 9px', borderRadius: 2, fontFamily: 'Space Mono, monospace', letterSpacing: '0.1em',
+          color: posted ? '#00ff88' : '#ffd060',
+          background: posted ? 'rgba(0,255,136,0.1)' : 'rgba(255,208,96,0.1)',
+          border: `1px solid ${posted ? 'rgba(0,255,136,0.35)' : 'rgba(255,208,96,0.35)'}` }}>
+          {posted ? '✓ LINEUP CONFIRMED' : '◐ LINEUP NOT POSTED'}
+        </span>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 4, alignItems: 'center' }}>
+          <span style={{ fontSize: 8.5, color: 'var(--dim)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.14em' }}>CAMERA</span>
+          {MLB_TILT_PRESETS.map(([l, deg]) => (
+            <button key={l} onClick={() => setTilt(deg)}
+              style={{ padding: '4px 9px', background: tilt === deg ? 'rgba(0,212,255,0.1)' : 'transparent',
+                border: `1px solid ${tilt === deg ? 'rgba(0,212,255,0.35)' : 'rgba(255,255,255,0.07)'}`,
+                color: tilt === deg ? 'var(--cyan)' : 'var(--dim)', fontFamily: 'Space Mono, monospace',
+                fontSize: 8.5, cursor: 'pointer', borderRadius: 2, letterSpacing: '0.08em' }}>{l}</button>
+          ))}
+        </div>
+      </div>
+
+      {!posted && (
+        <div style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'Space Mono, monospace', marginBottom: 10, lineHeight: 1.6 }}>
+          Batting order usually posts ~2–3h before first pitch. The starting pitcher is already on the mound; the other
+          spots fill in automatically once {abbr} releases the card.
+        </div>
+      )}
+
+      {/* ── The field ── */}
+      <div style={{ perspective: '1150px', perspectiveOrigin: '50% 42%', marginBottom: 18 }}>
+        <div style={{ position: 'relative', width: '100%', maxWidth: 780, margin: '0 auto', aspectRatio: '5 / 4',
+          transform: `rotateX(${tilt}deg)`, transformOrigin: 'center 72%', transformStyle: 'preserve-3d',
+          transition: 'transform 0.5s cubic-bezier(0.16,1,0.3,1)' }}>
+          <svg viewBox="0 0 100 100" preserveAspectRatio="none"
+            style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}>
+            <defs>
+              <linearGradient id="piqGrass" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#0d3020" /><stop offset="100%" stopColor="#071c12" />
+              </linearGradient>
+              <radialGradient id="piqDirt" cx="50%" cy="60%" r="70%">
+                <stop offset="0%" stopColor="#3a2a19" /><stop offset="100%" stopColor="#241a10" />
+              </radialGradient>
+              <clipPath id="piqFair"><path d="M 50,88 L 6,42 Q 50,-2 94,42 Z" /></clipPath>
+            </defs>
+            {/* fair territory + mowing stripes */}
+            <path d="M 50,88 L 6,42 Q 50,-2 94,42 Z" fill="url(#piqGrass)" />
+            <g clipPath="url(#piqFair)">
+              {mlbGrassWedges().map((d, i) => (
+                <path key={i} d={d} fill="#ffffff" opacity={i % 2 ? 0.035 : 0} />
+              ))}
+            </g>
+            {/* infield dirt + basepaths */}
+            <polygon points="50,88 74,64 50,41 26,64" fill="url(#piqDirt)" stroke="rgba(255,255,255,0.22)" strokeWidth="0.7" />
+            <circle cx="50" cy="64" r="5" fill="url(#piqDirt)" stroke="rgba(255,255,255,0.18)" strokeWidth="0.5" />
+            {/* bases */}
+            {[[50, 88], [74, 64], [50, 41], [26, 64]].map(([x, y], i) => (
+              <rect key={i} x={x - 1.5} y={y - 1.5} width="3" height="3" fill="#e8f0f8" opacity="0.9"
+                transform={`rotate(45 ${x} ${y})`} />
+            ))}
+            {/* foul lines + outfield wall */}
+            <path d="M 50,88 L 6,42" stroke={accentRaw} strokeWidth="0.6" opacity="0.55" fill="none" />
+            <path d="M 50,88 L 94,42" stroke={accentRaw} strokeWidth="0.6" opacity="0.55" fill="none" />
+            <path d="M 6,42 Q 50,-2 94,42" stroke={accentRaw} strokeWidth="0.9" opacity="0.75" fill="none" />
+          </svg>
+
+          {MLB_FIELD_SPOTS.map((spot, i) => (
+            <FieldCard key={spot.pos} spot={spot} player={byPos[spot.pos] || null} idx={i} />
+          ))}
+        </div>
+      </div>
+
+      {/* Selected player detail — reuses the prop model already loaded */}
+      {selected && (() => {
+        const pm = propsFor(selected.id);
+        return (
+          <HudCard style={{ padding: '12px 16px', marginBottom: 16 }} accent={accent}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 13, fontFamily: 'Space Mono, monospace', color: 'var(--text)', fontWeight: 700 }}>{selected.name}</span>
+              <span style={{ fontSize: 9, padding: '2px 7px', border: `1px solid ${accentRaw}66`, color: accent, fontFamily: 'Space Mono, monospace', borderRadius: 2 }}>
+                {selected.position}{selected.order ? ` · BATS ${selected.order}` : ''}
+              </span>
+              {pm ? (
+                <span style={{ marginLeft: 'auto', display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+                  {[['HIT 0.5+', pm.predictions?.hits?.['0.5']], ['RBI 0.5+', pm.predictions?.rbi?.['0.5']], ['K 0.5+', pm.predictions?.k?.['0.5']]].map(([l, v]) => (
+                    <span key={l} style={{ fontSize: 9, fontFamily: 'Space Mono, monospace', color: 'var(--dim)', letterSpacing: '0.08em' }}>
+                      {l} <span style={{ fontFamily: 'Orbitron, monospace', fontSize: 13, fontWeight: 700, color: mlbPropColor(v) }}>
+                        {v != null ? `${Math.round(v * 100)}%` : '—'}
+                      </span>
+                    </span>
+                  ))}
+                </span>
+              ) : (
+                <span style={{ marginLeft: 'auto', fontSize: 9, color: 'var(--dim)', fontFamily: 'Space Mono, monospace' }}>
+                  no projection {selected.isSP ? '(pitcher)' : 'yet'}
+                </span>
+              )}
+            </div>
+          </HudCard>
+        );
+      })()}
+
+      {/* Batting order — the spatial view doesn't convey sequence, so keep it */}
+      {posted && (
+        <>
+          <div style={{ fontSize: 9, color: 'var(--dim)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.18em', marginBottom: 8 }}>
+            BATTING ORDER
+          </div>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 16 }}>
+            {lineup.slice().sort((a, b) => (a.order || 99) - (b.order || 99)).map(b => {
+              const isSel = String(b.id) === String(selId);
+              return (
+                <button key={b.id} onClick={() => setSelId(isSel ? null : String(b.id))}
+                  style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 9px', borderRadius: 2, cursor: 'pointer',
+                    background: isSel ? `${accentRaw}1a` : 'rgba(255,255,255,0.02)',
+                    border: `1px solid ${isSel ? accentRaw + '77' : 'rgba(255,255,255,0.06)'}` }}>
+                  <span style={{ fontFamily: 'Orbitron, monospace', fontSize: 11, fontWeight: 900, color: accent }}>{b.order}</span>
+                  <span style={{ fontFamily: 'Space Mono, monospace', fontSize: 10, color: 'var(--text)' }}>{mlbLastName(b.name)}</span>
+                  <span style={{ fontFamily: 'Space Mono, monospace', fontSize: 8.5, color: 'var(--dim)' }}>{b.position}</span>
+                </button>
+              );
+            })}
+          </div>
+        </>
+      )}
+
+      {/* Non-fielders */}
+      {dugout.length > 0 && (
+        <>
+          <div style={{ fontSize: 9, color: 'var(--dim)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.18em', marginBottom: 8 }}>
+            DUGOUT · BATS BUT DOESN'T FIELD
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {dugout.map(b => (
+              <div key={b.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px',
+                background: 'var(--surface)', borderRadius: 3, border: '1px solid rgba(255,255,255,0.05)' }}>
+                <div style={{ width: 26, height: 26, borderRadius: '50%', overflow: 'hidden', border: `1px solid ${accentRaw}55` }}>
+                  <img src={mlbHeadshot(b.id)} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                    onError={e => { e.target.style.display = 'none'; }} />
+                </div>
+                <span style={{ fontSize: 10, fontFamily: 'Space Mono, monospace', color: 'var(--text)', fontWeight: 700 }}>{b.name}</span>
+                <span style={{ fontSize: 9, padding: '1px 6px', border: `1px solid ${accentRaw}44`, color: accent, fontFamily: 'Space Mono, monospace', borderRadius: 2 }}>
+                  {b.position}{b.order ? ` · ${b.order}` : ''}
+                </span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+Object.assign(window, { EdgeFinderTab, PitchingEdgeTab, HighContactTab, LowHrModelTab, MlbLineupFieldTab });

@@ -92,13 +92,24 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, { games });
     }
 
-    // GET /api/mlb/lineups?gamePk=...&refresh=1
+    // GET /api/mlb/lineups?gamePk=... OR ?away=...&home=...&date=YYYY-MM-DD
+    //   Batting order + fielding position per hitter, plus each probable SP.
+    //   Powers the LINEUP field view. Add &refresh=1 to bypass cache.
     if (path === '/api/mlb/lineups') {
-      const gamePk = url.searchParams.get('gamePk');
-      if (!gamePk) return sendError(res, 'gamePk required');
+      let gamePk = url.searchParams.get('gamePk');
+      if (!gamePk) {
+        const away = url.searchParams.get('away');
+        const home = url.searchParams.get('home');
+        const date = url.searchParams.get('date') || undefined;
+        if (!away || !home) return sendError(res, 'gamePk or away+home team names required');
+        gamePk = await findGamePkByTeams(away, home, date);
+        if (!gamePk) return sendError(res, `No game found for ${away} @ ${home}`, 404);
+      }
       const refresh = url.searchParams.get('refresh') === '1';
-      const lineups = await getGameLineups(gamePk, { refresh });
-      return sendJson(res, lineups);
+      const awayPitcher = url.searchParams.get('awayPitcher') || undefined;
+      const homePitcher = url.searchParams.get('homePitcher') || undefined;
+      const lineups = await getGameLineups(gamePk, { refresh, awayPitcher, homePitcher });
+      return sendJson(res, { gamePk, ...lineups });
     }
 
     // GET /api/mlb/bvp?batterId=...&pitcherId=...&refresh=1

@@ -98,6 +98,24 @@ async function fetchMlbPropModel(gameInfo, lineups, pitchers) {
   }
 }
 
+// Batting order + fielding positions for the LINEUP field view.
+async function fetchMlbLineups(gameInfo, pitchers) {
+  try {
+    const date = mlbBusinessDate(gameInfo.date);
+    const url = `${API_BASE}/api/mlb/lineups`
+      + `?away=${encodeURIComponent(gameInfo.awayFull)}`
+      + `&home=${encodeURIComponent(gameInfo.homeFull)}`
+      + (date ? `&date=${date}` : '')
+      + (pitchers?.away?.name ? `&awayPitcher=${encodeURIComponent(pitchers.away.name)}` : '')
+      + (pitchers?.home?.name ? `&homePitcher=${encodeURIComponent(pitchers.home.name)}` : '');
+    const r = await fetch(url);
+    if (!r.ok) return null;
+    return await r.json();
+  } catch {
+    return null;
+  }
+}
+
 async function fetchMlbPitcherProps(gameInfo, pitchers) {
   try {
     const date = mlbBusinessDate(gameInfo.date);
@@ -317,6 +335,7 @@ async function fetchMlbStarters(gameInfo) {
 Object.assign(window, {
   fetchGameBvp, fetchWeather, fetchHighContactReport, fetchLowHrReport, fetchMlbPropModel,
   fetchMlbPitcherProps,
+  fetchMlbLineups,
   fetchMlbSlateReadiness, findMlbReadiness,
   fetchPlayerGameLog, attachWeatherToGameLog,
   buildMlbEdgeData, fetchMlbStarters, MLB_TEAM_ABBR,

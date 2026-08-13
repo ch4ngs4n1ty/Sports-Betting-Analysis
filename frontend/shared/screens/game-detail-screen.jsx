@@ -8,6 +8,7 @@ const TABS_MLB = [
   { id: 'h2h', label: 'HEAD-TO-HEAD' },
   { id: 'form', label: 'LAST 5' },
   { id: 'roster', label: 'ROSTERS' },
+  { id: 'lineup', label: '⬢ LINEUP' },
   { id: 'edges', label: 'EDGE FINDER' },
   { id: 'pitching', label: 'PITCHING' },
   { id: 'lowhr', label: 'LOW HR MODEL' },
@@ -90,7 +91,7 @@ function GameDetailScreen({ game, onBack }) {
 
         // Render the page now — user can read Overview while extras load
         const initLoading = game.sportKey === 'mlb'
-          ? { mlbEdgeData: true, pitchingData: true, highContactData: true, lowHrData: true, mlbPropModel: true, mlbPitcherProps: true }
+          ? { mlbEdgeData: true, pitchingData: true, highContactData: true, lowHrData: true, mlbPropModel: true, mlbPitcherProps: true, mlbLineups: true }
           : game.sportKey === 'nba'
           ? { nbaEdgeData: true, nbaLineupData: true, nbaDefenseEdge: true, nbaDefenseTable: true }
           : game.sportKey === 'wnba'
@@ -109,12 +110,13 @@ function GameDetailScreen({ game, onBack }) {
             try {
               const starterData = await fetchMlbStarters(game);
               // BvP, high-contact, low-HR, and the prop model share lineup/pitcher inputs.
-              const [bvpData, highContactData, lowHrData, mlbPropModel, mlbPitcherProps] = await Promise.all([
+              const [bvpData, highContactData, lowHrData, mlbPropModel, mlbPitcherProps, mlbLineups] = await Promise.all([
                 fetchGameBvp(game, starterData.lineups, starterData.pitchers),
                 fetchHighContactReport(game, starterData.lineups, starterData.pitchers),
                 fetchLowHrReport(game, starterData.lineups, starterData.pitchers),
                 fetchMlbPropModel(game, starterData.lineups, starterData.pitchers),
                 fetchMlbPitcherProps(game, starterData.pitchers),
+                fetchMlbLineups(game, starterData.pitchers),
               ]);
               const mlbEdgeData = await buildMlbEdgeData(game, bvpData);
               if (cancelled) return;
@@ -125,11 +127,12 @@ function GameDetailScreen({ game, onBack }) {
                 lowHrData,
                 mlbPropModel,
                 mlbPitcherProps,
-                _loading: { ...prev._loading, mlbEdgeData: false, pitchingData: false, highContactData: false, lowHrData: false, mlbPropModel: false, mlbPitcherProps: false },
+                mlbLineups,
+                _loading: { ...prev._loading, mlbEdgeData: false, pitchingData: false, highContactData: false, lowHrData: false, mlbPropModel: false, mlbPitcherProps: false, mlbLineups: false },
               });
             } catch (e) {
               console.error('MLB extras failed', e);
-              if (!cancelled) setGameData(prev => prev && { ...prev, _loading: { ...prev._loading, mlbEdgeData: false, pitchingData: false, highContactData: false, lowHrData: false, mlbPropModel: false, mlbPitcherProps: false } });
+              if (!cancelled) setGameData(prev => prev && { ...prev, _loading: { ...prev._loading, mlbEdgeData: false, pitchingData: false, highContactData: false, lowHrData: false, mlbPropModel: false, mlbPitcherProps: false, mlbLineups: false } });
             }
           })();
         } else if (game.sportKey === 'nba') {
@@ -238,6 +241,7 @@ function GameDetailScreen({ game, onBack }) {
             {tab === 'h2h' && <H2HTab gameData={gameData} />}
             {tab === 'form' && <FormTab gameData={gameData} />}
             {tab === 'roster' && <RosterTab gameData={gameData} />}
+            {tab === 'lineup' && <MlbLineupFieldTab gameData={gameData} />}
             {tab === 'lineups' && <NbaLineupTab gameData={gameData} />}
             {tab === 'def-vs-pos' && <NbaDefenseVsPositionTab gameData={gameData} />}
             {tab === 'edges' && ((game.sportKey === 'nba' || game.sportKey === 'wnba')

@@ -25,7 +25,7 @@ playiq/
 │   │       ├── games-screen.jsx                — GamesScreen (today's games; MLB cards show a research-readiness strip: SP + LINEUP pills + ● READY, from /api/mlb/games readiness flags)
 │   │       └── game-detail-screen.jsx          — GameDetailScreen + TABS_MLB / TABS_NBA / TABS_OTHER + Phase 1 / Phase 2 loading
 │   └── sports/
-│       ├── mlb/tabs.jsx                        — MLB-specific tabs: EdgeFinderTab (incl. PROP PROJECTION MODEL board: transparent Log5 P(Hits/RBI/K≥line)), PitchingEdgeTab (incl. PITCHER PROJECTION MODEL board: P(K/Outs/ER/HR≥line) + per-start bar charts), LowHrModelTab, HighContactTab
+│       ├── mlb/tabs.jsx                        — MLB-specific tabs: EdgeFinderTab (incl. PROP PROJECTION MODEL board: transparent Log5 P(Hits/RBI/K≥line)), PitchingEdgeTab (incl. PITCHER PROJECTION MODEL board: P(K/Outs/ER/HR≥line) + per-start bar charts), MlbLineupFieldTab (3D CSS-perspective diamond: each starter's card at their fielding position; field rotateX + cards counter-rotated so text stays crisp — no WebGL), LowHrModelTab, HighContactTab
 │       └── nba/tabs.jsx                        — NBA-specific tabs: NbaEdgeFinderTab (incl. PROJECTION MODEL board: P(stat≥line) per player), NbaLineupTab, NbaDefenseVsPositionTab
 ├── manifest.json                               — PWA manifest
 ├── icon.svg                                    — PWA icon
