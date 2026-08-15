@@ -24,11 +24,12 @@ const MLB_LOADER_CSS = `
 }
 @keyframes piqBatSwing {
   0%   { transform: rotate(-28deg); }
-  38%  { transform: rotate(62deg); }
-  100% { transform: rotate(44deg); }
+  42%  { transform: rotate(48deg); }
+  100% { transform: rotate(35deg); }
 }
-@keyframes piqHomerX { from { transform: translateX(0); }   to { transform: translateX(246px); } }
-@keyframes piqHomerY { from { transform: translateY(0); }   to { transform: translateY(-70px); } }
+/* ends at (250,26): clear of the wall top (y=58) but still inside the 320x120 frame */
+@keyframes piqHomerX { from { transform: translateX(0); }   to { transform: translateX(186px); } }
+@keyframes piqHomerY { from { transform: translateY(0); }   to { transform: translateY(-40px); } }
 @keyframes piqCrack  { 0% { opacity: 0; transform: scale(0.5); } 30% { opacity: 1; transform: scale(1.2); } 100% { opacity: 0; transform: scale(1.6); } }
 @keyframes piqHrText { 0% { opacity: 0; transform: translateY(6px); } 40% { opacity: 1; transform: translateY(0); } 100% { opacity: 1; transform: translateY(0); } }
 `;
@@ -85,32 +86,41 @@ function MlbDataLoader({ phase, source, label }) {
               <stop offset="0%" stopColor="#12402a" /><stop offset="100%" stopColor="#08200f" />
             </linearGradient>
           </defs>
-          {/* ground + outfield wall */}
-          <path d="M 0,96 L 320,96 L 320,120 L 0,120 Z" fill="url(#piqLoadGrass)" opacity="0.5" />
-          <line x1="0" y1="96" x2="320" y2="96" stroke="var(--cyan)" strokeWidth="1" opacity="0.35" />
-          <line x1="292" y1="96" x2="292" y2="54" stroke="var(--cyan)" strokeWidth="2" opacity={hit ? 0.85 : 0.4} />
-          <line x1="284" y1="54" x2="300" y2="54" stroke="var(--cyan)" strokeWidth="2" opacity={hit ? 0.85 : 0.4} />
+          {/* ground */}
+          <path d="M 0,92 L 320,92 L 320,120 L 0,120 Z" fill="url(#piqLoadGrass)" />
+          <line x1="0" y1="92" x2="320" y2="92" stroke="var(--cyan)" strokeWidth="1" opacity="0.3" />
+          {/* outfield fence — a solid wall with a lit top rail, not a goalpost */}
+          <rect x="284" y="58" width="16" height="34" fill="#0b1a14" stroke="rgba(255,255,255,0.10)" strokeWidth="0.8" />
+          <rect x="282" y="56" width="20" height="3" rx="1.5" fill="var(--cyan)" opacity={hit ? 0.9 : 0.45} />
           {/* home plate */}
-          <polygon points="40,96 56,96 56,91 48,87 40,91" fill="#eef4fa" opacity="0.85" />
+          <polygon points="38,92 54,92 54,87 46,83 38,87" fill="#eef4fa" opacity="0.8" />
 
-          {/* bat — pivots at the handle */}
+          {/* bat — pivots at the knob; barrel is the thick end */}
           <g style={{ transformBox: 'fill-box', transformOrigin: '50% 100%',
             animation: hit ? 'piqBatSwing 0.5s cubic-bezier(0.2,0.9,0.3,1) forwards' : 'piqBatIdle 1.6s ease-in-out infinite' }}>
-            <rect x="44" y="52" width="6" height="42" rx="3" fill="#c9a227" />
-            <rect x="44.5" y="84" width="5" height="10" rx="2.5" fill="#8a6f1c" />
+            <path d="M 43.4,50 Q 47,47 50.6,50 L 49,80 Q 47,82 45,80 Z" fill="#c9a227" />
+            <rect x="45.2" y="80" width="3.6" height="12" rx="1.8" fill="#8a6f1c" />
+            <circle cx="47" cy="92" r="2.4" fill="#6d5715" />
           </g>
 
-          {/* contact flash */}
+          {/* contact flash — sits on the swung bat's barrel, where the ball departs */}
           {hit && (
             <g style={{ animation: 'piqCrack 0.45s ease-out forwards', transformBox: 'fill-box', transformOrigin: 'center' }}>
-              <circle cx="64" cy="66" r="13" fill="none" stroke="#ffd060" strokeWidth="2.5" />
+              {[0, 45, 90, 135, 180, 225, 270, 315].map(a => {
+                const r1 = 6, r2 = 13, rad = a * Math.PI / 180;
+                return <line key={a}
+                  x1={66 + r1 * Math.cos(rad)} y1={64 + r1 * Math.sin(rad)}
+                  x2={66 + r2 * Math.cos(rad)} y2={64 + r2 * Math.sin(rad)}
+                  stroke="#ffd060" strokeWidth="2" strokeLinecap="round" />;
+              })}
+              <circle cx="66" cy="64" r="4" fill="#fff3c4" opacity="0.95" />
             </g>
           )}
 
           {/* ball — loops in on the pitch, launches out on contact */}
           <g style={{ animation: hit ? 'piqHomerX 1.05s cubic-bezier(0.25,0.6,0.4,1) forwards' : 'none' }}>
             <g style={{ animation: hit ? 'piqHomerY 1.05s cubic-bezier(0.15,0.9,0.5,1) forwards' : 'piqPitch 1.25s linear infinite' }}>
-              <g transform="translate(64,66)">
+              <g transform="translate(66,64)">
                 <circle r="7" fill="#f4f8fc" />
                 <path d="M -3.4,-5.6 A 7,7 0 0 0 -3.4,5.6" fill="none" stroke="#d0555a" strokeWidth="1.1" />
                 <path d="M 3.4,-5.6 A 7,7 0 0 1 3.4,5.6" fill="none" stroke="#d0555a" strokeWidth="1.1" />
@@ -119,7 +129,7 @@ function MlbDataLoader({ phase, source, label }) {
           </g>
 
           {hit && (
-            <text x="196" y="34" textAnchor="middle" fill="#00ff88" fontFamily="Orbitron, monospace"
+            <text x="168" y="30" textAnchor="middle" fill="#00ff88" fontFamily="Orbitron, monospace"
               fontSize="17" fontWeight="900" letterSpacing="2.5"
               style={{ animation: 'piqHrText 0.5s ease-out 0.28s backwards' }}>HOME RUN</text>
           )}
