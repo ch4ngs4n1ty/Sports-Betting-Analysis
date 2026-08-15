@@ -41,7 +41,7 @@ const MLB_PROP_STAT_LABELS = { hits: 'HITS', rbi: 'RBI', k: 'STRIKEOUTS' };
 const MLB_PROP_LINES = { hits: [0.5, 1.5], rbi: [0.5], k: [0.5, 1.5] };
 
 function mlbPropColor(p) {
-  if (p == null) return 'var(--dim)';
+  if (p == null) return 'var(--muted)';
   if (p >= 0.70) return '#00ff88';
   if (p >= 0.55) return '#ffd060';
   if (p >= 0.45) return '#00d4ff';
@@ -69,7 +69,7 @@ function EdgeFinderTab({ gameData }) {
     const hasBvp = bvp && bvp.pa > 0;
     const opsColor = hasBvp
       ? (bvp.ops >= 0.900 ? 'var(--green)' : bvp.ops >= 0.700 ? 'var(--gold)' : bvp.ops >= 0.500 ? 'var(--cyan)' : 'var(--orange)')
-      : 'var(--dim)';
+      : 'var(--muted)';
 
     const bvpGames = hasBvp ? shapeBvpForChart(bvp.gameByGame, b.pitcher) : [];
 
@@ -81,9 +81,9 @@ function EdgeFinderTab({ gameData }) {
           <div style={{ flex: 1, minWidth: 180 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
               <span style={{ fontSize: 15, fontFamily: 'Space Mono, monospace', color: 'var(--text)', fontWeight: 700 }}>{b.name}</span>
-              <span style={{ fontSize: 9, padding: '2px 7px', border: `1px solid ${b.teamColor}66`, color: b.teamColor, fontFamily: 'Space Mono, monospace', borderRadius: 2, letterSpacing: '0.08em' }}>{b.teamAbbr}</span>
-              <span style={{ fontSize: 9, padding: '2px 7px', border: `1px solid ${b.teamColor}44`, color: b.teamColor, fontFamily: 'Space Mono, monospace', borderRadius: 2 }}>{b.position}</span>
-              {b.order && <span style={{ fontSize: 9, color: 'var(--dim)', fontFamily: 'Space Mono, monospace' }}>#{b.order}</span>}
+              <span style={{ fontSize: 10, padding: '2px 7px', border: `1px solid ${b.teamColor}66`, color: b.teamColor, fontFamily: 'Space Mono, monospace', borderRadius: 2, letterSpacing: '0.08em' }}>{b.teamAbbr}</span>
+              <span style={{ fontSize: 10, padding: '2px 7px', border: `1px solid ${b.teamColor}44`, color: b.teamColor, fontFamily: 'Space Mono, monospace', borderRadius: 2 }}>{b.position}</span>
+              {b.order && <span style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'Space Mono, monospace' }}>#{b.order}</span>}
               <HotBadge tier={b.hotTier} />
             </div>
             <div style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.05em' }}>vs {b.pitcher || 'TBD'}</div>
@@ -94,7 +94,7 @@ function EdgeFinderTab({ gameData }) {
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, auto)', columnGap: 14, rowGap: 3 }}>
                 {[['PA', bvp.pa], ['H', bvp.hits], ['HR', bvp.hr], ['BB', bvp.bb]].map(([l, v]) => (
                   <React.Fragment key={l}>
-                    <span style={{ fontSize: 9, color: 'var(--dim)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.14em' }}>{l}</span>
+                    <span style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.14em' }}>{l}</span>
                     <span style={{ fontSize: 13, fontFamily: 'Orbitron, monospace', fontWeight: 700,
                       color: l === 'HR' && v > 0 ? 'var(--orange)' : 'var(--text)' }}>{v}</span>
                   </React.Fragment>
@@ -103,7 +103,7 @@ function EdgeFinderTab({ gameData }) {
             </div>
           )}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingLeft: 10, borderLeft: '1px solid rgba(255,255,255,0.06)' }}>
-            <span style={{ fontSize: 9, color: 'var(--dim)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.15em' }}>
+            <span style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.15em' }}>
               {open ? 'HIDE' : 'EXPAND'}
             </span>
             <span style={{ fontSize: 14, color: opsColor, fontFamily: 'Orbitron, monospace', transition: 'transform 0.2s',
@@ -114,7 +114,7 @@ function EdgeFinderTab({ gameData }) {
         {open && (
           <div style={{ marginTop: 18, animation: 'fadeUp 0.25s ease' }}>
             <div style={{ paddingTop: 14, borderTop: '1px solid rgba(255,255,255,0.05)' }}>
-              <div style={{ fontSize: 9, fontFamily: 'Space Mono, monospace', color: b.teamColor, letterSpacing: '0.22em', marginBottom: 10 }}>
+              <div style={{ fontSize: 10, fontFamily: 'Space Mono, monospace', color: b.teamColor, letterSpacing: '0.22em', marginBottom: 10 }}>
                 LAST 5 GAMES (SEASON)
               </div>
               <GameLogChart games={b.gameLog || []} stats={L5_STATS} defaultStat="hits" emptyLabel="NO RECENT SEASON GAMES" accent={b.teamColor} />
@@ -122,11 +122,11 @@ function EdgeFinderTab({ gameData }) {
 
             <div style={{ paddingTop: 18, marginTop: 18, borderTop: '1px solid rgba(255,255,255,0.05)' }}>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
-                <span style={{ fontSize: 9, fontFamily: 'Space Mono, monospace', color: opsColor, letterSpacing: '0.22em' }}>
+                <span style={{ fontSize: 10, fontFamily: 'Space Mono, monospace', color: opsColor, letterSpacing: '0.22em' }}>
                   GAMES VS {b.pitcher?.toUpperCase() || 'PITCHER'} (SAVANT)
                 </span>
                 {hasBvp && (
-                  <span style={{ fontSize: 9, color: 'var(--dim)', fontFamily: 'Space Mono, monospace' }}>
+                  <span style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'Space Mono, monospace' }}>
                     {bvp.gamesPlayed}G · LAST: {bvp.lastFaced || '—'}
                   </span>
                 )}
@@ -134,7 +134,7 @@ function EdgeFinderTab({ gameData }) {
               {hasBvp ? (
                 <GameLogChart games={bvpGames} stats={BVP_STATS} defaultStat="h" emptyLabel="NO BvP HISTORY" accent={opsColor} />
               ) : (
-                <div style={{ fontSize: 10, color: 'var(--dim)', fontFamily: 'Space Mono, monospace', padding: '16px 0', letterSpacing: '0.1em' }}>
+                <div style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'Space Mono, monospace', padding: '16px 0', letterSpacing: '0.1em' }}>
                   NO BvP HISTORY
                 </div>
               )}
@@ -176,21 +176,21 @@ function EdgeFinderTab({ gameData }) {
         <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid rgba(255,255,255,0.04)', animation: 'fadeUp 0.2s ease' }}>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 6 }}>
             {chips.map(([l, v]) => (
-              <span key={l} style={{ fontSize: 8.5, fontFamily: 'Space Mono, monospace', color: 'var(--text)', padding: '2px 6px', background: 'rgba(255,255,255,0.03)', borderRadius: 2, border: '1px solid rgba(255,255,255,0.05)' }}>
-                <span style={{ color: 'var(--dim)' }}>{l} </span>{v == null ? '—' : v}
+              <span key={l} style={{ fontSize: 9.5, fontFamily: 'Space Mono, monospace', color: 'var(--text)', padding: '2px 6px', background: 'rgba(255,255,255,0.03)', borderRadius: 2, border: '1px solid rgba(255,255,255,0.05)' }}>
+                <span style={{ color: 'var(--muted)' }}>{l} </span>{v == null ? '—' : v}
               </span>
             ))}
             {b.context?.bvpPa > 0 && (
-              <span style={{ fontSize: 8.5, fontFamily: 'Space Mono, monospace', color: '#ffd060', padding: '2px 6px', background: 'rgba(255,208,96,0.08)', borderRadius: 2, border: '1px solid rgba(255,208,96,0.25)' }}>
+              <span style={{ fontSize: 9.5, fontFamily: 'Space Mono, monospace', color: '#ffd060', padding: '2px 6px', background: 'rgba(255,208,96,0.08)', borderRadius: 2, border: '1px solid rgba(255,208,96,0.25)' }}>
                 BvP {b.context.bvpH}H/{b.context.bvpK}K in {b.context.bvpPa}PA
               </span>
             )}
-            <span style={{ fontSize: 8.5, fontFamily: 'Space Mono, monospace', color: b.context?.platoonAdv ? '#5ff5a5' : 'var(--dim)', padding: '2px 6px', borderRadius: 2, border: '1px solid rgba(255,255,255,0.05)' }}>
+            <span style={{ fontSize: 9.5, fontFamily: 'Space Mono, monospace', color: b.context?.platoonAdv ? '#5ff5a5' : 'var(--muted)', padding: '2px 6px', borderRadius: 2, border: '1px solid rgba(255,255,255,0.05)' }}>
               {b.context?.platoonAdv ? 'platoon edge' : 'no platoon edge'}
             </span>
           </div>
-          <div style={{ fontSize: 8.5, color: 'var(--muted)', fontFamily: 'Space Mono, monospace', lineHeight: 1.5 }}>
-            <span style={{ color: 'var(--dim)' }}>METHOD </span>{formula}
+          <div style={{ fontSize: 9.5, color: 'var(--muted)', fontFamily: 'Space Mono, monospace', lineHeight: 1.5 }}>
+            <span style={{ color: 'var(--muted)' }}>METHOD </span>{formula}
           </div>
         </div>
       );
@@ -200,8 +200,8 @@ function EdgeFinderTab({ gameData }) {
       <HudCard style={{ padding: '16px 18px', marginBottom: 20 }} accent="#00ff88">
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
           <span style={{ fontSize: 12, fontFamily: 'Orbitron, monospace', fontWeight: 900, color: '#00ff88', letterSpacing: '0.12em' }}>◆ PROP PROJECTION MODEL</span>
-          <span style={{ fontSize: 9, fontFamily: 'Space Mono, monospace', color: 'var(--muted)', letterSpacing: '0.1em' }}>Log5 matchup · likelihood to hit the line</span>
-          <span style={{ marginLeft: 'auto', fontSize: 9, fontFamily: 'Space Mono, monospace', color: 'var(--dim)' }}>
+          <span style={{ fontSize: 10, fontFamily: 'Space Mono, monospace', color: 'var(--muted)', letterSpacing: '0.1em' }}>Log5 matchup · likelihood to hit the line</span>
+          <span style={{ marginLeft: 'auto', fontSize: 10, fontFamily: 'Space Mono, monospace', color: 'var(--muted)' }}>
             {park.venue || ''}{park.factor != null ? ` · park ${park.factor}` : ''}{wx.temp != null ? ` · ${wx.temp}°` : ''}
           </span>
         </div>
@@ -222,7 +222,7 @@ function EdgeFinderTab({ gameData }) {
               <button key={line} onClick={() => setPropLine(line)}
                 style={{ padding: '5px 12px', background: propLine === line ? 'rgba(0,212,255,0.12)' : 'transparent',
                   border: `1px solid ${propLine === line ? 'rgba(0,212,255,0.4)' : 'rgba(255,255,255,0.08)'}`,
-                  color: propLine === line ? 'var(--cyan)' : 'var(--dim)', fontFamily: 'Space Mono, monospace',
+                  color: propLine === line ? 'var(--cyan)' : 'var(--muted)', fontFamily: 'Space Mono, monospace',
                   fontSize: 10, cursor: 'pointer', borderRadius: 2 }}>{line}+</button>
             ))}
           </div>
@@ -238,17 +238,17 @@ function EdgeFinderTab({ gameData }) {
               const pct = Math.round(b.prob * 100);
               const tc = colorFor(b.side);
               const isOpen = openId === b.id;
-              const confColor = b.confidence === 'HIGH' ? '#00ff88' : b.confidence === 'MED' ? '#ffd060' : 'var(--dim)';
+              const confColor = b.confidence === 'HIGH' ? '#00ff88' : b.confidence === 'MED' ? '#ffd060' : 'var(--muted)';
               return (
                 <div key={b.id || i} style={{ padding: '9px 10px', borderRadius: 3, background: i % 2 ? 'transparent' : 'rgba(255,255,255,0.02)' }}>
                   <div onClick={() => setOpenId(isOpen ? null : b.id)} style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', cursor: 'pointer', userSelect: 'none' }}>
-                    <span style={{ width: 20, textAlign: 'center', fontSize: 14, fontFamily: 'Orbitron, monospace', fontWeight: 900, color: i === 0 ? '#00ff88' : i <= 2 ? 'var(--cyan)' : 'var(--dim)' }}>{i + 1}</span>
+                    <span style={{ width: 20, textAlign: 'center', fontSize: 14, fontFamily: 'Orbitron, monospace', fontWeight: 900, color: i === 0 ? '#00ff88' : i <= 2 ? 'var(--cyan)' : 'var(--muted)' }}>{i + 1}</span>
                     <div style={{ flex: 1, minWidth: 150 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
                         <span style={{ fontSize: 13, fontFamily: 'Space Mono, monospace', color: 'var(--text)', fontWeight: 700 }}>{b.name}</span>
-                        <span style={{ fontSize: 8, padding: '1px 6px', border: `1px solid ${tc}66`, color: tc, fontFamily: 'Space Mono, monospace', borderRadius: 2 }}>{abbrFor(b.side)} #{b.order || '—'}</span>
+                        <span style={{ fontSize: 9.5, padding: '1px 6px', border: `1px solid ${tc}66`, color: tc, fontFamily: 'Space Mono, monospace', borderRadius: 2 }}>{abbrFor(b.side)} #{b.order || '—'}</span>
                       </div>
-                      <div style={{ fontSize: 9, color: 'var(--muted)', fontFamily: 'Space Mono, monospace', marginTop: 2 }}>
+                      <div style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'Space Mono, monospace', marginTop: 2 }}>
                         vs {b.pitcher}{b.pitcherThrows ? ` (${b.pitcherThrows}HP)` : ''} · <span style={{ color: confColor }}>{b.confidence}</span>
                       </div>
                     </div>
@@ -266,10 +266,10 @@ function EdgeFinderTab({ gameData }) {
             })}
           </div>
         ) : (
-          <div style={{ fontSize: 10, color: 'var(--dim)', fontFamily: 'Space Mono, monospace', padding: '10px 0' }}>No batters to project yet — waiting on lineups.</div>
+          <div style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'Space Mono, monospace', padding: '10px 0' }}>No batters to project yet — waiting on lineups.</div>
         )}
 
-        <div style={{ fontSize: 9, color: 'var(--muted)', fontFamily: 'Space Mono, monospace', marginTop: 12, lineHeight: 1.6 }}>
+        <div style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'Space Mono, monospace', marginTop: 12, lineHeight: 1.6 }}>
           Log5 blends each batter's rate with the pitcher's rate-allowed vs league, adjusted for park, weather, platoon, and BvP; Binomial (hits/K) or Poisson (RBI) over expected plate appearances. Tap a row to see the math. RBIs are inherently noisy — fair odds only, not a guarantee.
         </div>
       </HudCard>
@@ -285,7 +285,7 @@ function EdgeFinderTab({ gameData }) {
         </div>
         {bvpStatus && (
           <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
-            <span style={{ fontSize: 9, fontFamily: 'Space Mono, monospace',
+            <span style={{ fontSize: 10, fontFamily: 'Space Mono, monospace',
               color: bvpStatus.lineupStatus === 'confirmed' ? 'var(--green)' : 'var(--gold)', letterSpacing: '0.1em' }}>
               LINEUP: {(bvpStatus.lineupStatus || '—').toUpperCase()}
             </span>
@@ -293,8 +293,8 @@ function EdgeFinderTab({ gameData }) {
               <button key={v} onClick={() => setFilter(v)}
                 style={{ padding: '4px 10px', background: filter===v ? 'rgba(0,212,255,0.1)' : 'transparent',
                   border: `1px solid ${filter===v ? 'rgba(0,212,255,0.3)' : 'rgba(255,255,255,0.06)'}`,
-                  color: filter===v ? 'var(--cyan)' : 'var(--dim)', fontFamily: 'Space Mono, monospace',
-                  fontSize: 9, cursor: 'pointer', borderRadius: 2 }}>{l}</button>
+                  color: filter===v ? 'var(--cyan)' : 'var(--muted)', fontFamily: 'Space Mono, monospace',
+                  fontSize: 10, cursor: 'pointer', borderRadius: 2 }}>{l}</button>
             ))}
           </div>
         )}
@@ -337,7 +337,7 @@ function PitchingEdgeTab({ gameData }) {
   const fv = (v, d = 2) => v != null ? Number(v).toFixed(d) : '—';
 
   const PitcherCard = ({ p, abbr, color }) => {
-    if (!p) return <HudCard style={{ padding: 20, textAlign: 'center' }} accent="var(--dim)"><div style={{ color: 'var(--dim)', fontFamily: 'Space Mono, monospace', fontSize: 10 }}>SP NOT ANNOUNCED</div></HudCard>;
+    if (!p) return <HudCard style={{ padding: 20, textAlign: 'center' }} accent="var(--dim)"><div style={{ color: 'var(--muted)', fontFamily: 'Space Mono, monospace', fontSize: 10 }}>SP NOT ANNOUNCED</div></HudCard>;
     return (
       <HudCard style={{ padding: 18 }} accent={color}>
         <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start', marginBottom: 16 }}>
@@ -352,7 +352,7 @@ function PitchingEdgeTab({ gameData }) {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
           {[['ERA', fv(p.era)], ['WHIP', fv(p.whip)], ['REC', p.record || '—']].map(([l, v]) => (
             <div key={l} style={{ textAlign: 'center', padding: '8px 6px', background: 'var(--surface)', borderRadius: 3 }}>
-              <div style={{ fontSize: 8, color: 'var(--dim)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.12em', marginBottom: 3 }}>{l}</div>
+              <div style={{ fontSize: 9.5, color: 'var(--muted)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.12em', marginBottom: 3 }}>{l}</div>
               <div style={{ fontSize: 18, fontFamily: 'Orbitron, monospace', color, fontWeight: 700 }}>{v}</div>
             </div>
           ))}
@@ -402,16 +402,16 @@ function PitchingEdgeTab({ gameData }) {
         <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid rgba(255,255,255,0.04)', animation: 'fadeUp 0.2s ease' }}>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 6 }}>
             {chips.map(([l, v]) => (
-              <span key={l} style={{ fontSize: 8.5, fontFamily: 'Space Mono, monospace', color: 'var(--text)', padding: '2px 6px', background: 'rgba(255,255,255,0.03)', borderRadius: 2, border: '1px solid rgba(255,255,255,0.05)' }}>
-                <span style={{ color: 'var(--dim)' }}>{l} </span>{v == null ? '—' : v}
+              <span key={l} style={{ fontSize: 9.5, fontFamily: 'Space Mono, monospace', color: 'var(--text)', padding: '2px 6px', background: 'rgba(255,255,255,0.03)', borderRadius: 2, border: '1px solid rgba(255,255,255,0.05)' }}>
+                <span style={{ color: 'var(--muted)' }}>{l} </span>{v == null ? '—' : v}
               </span>
             ))}
-            <span style={{ fontSize: 8.5, fontFamily: 'Space Mono, monospace', color: 'var(--muted)', padding: '2px 6px', borderRadius: 2, border: '1px solid rgba(255,255,255,0.05)' }}>
+            <span style={{ fontSize: 9.5, fontFamily: 'Space Mono, monospace', color: 'var(--muted)', padding: '2px 6px', borderRadius: 2, border: '1px solid rgba(255,255,255,0.05)' }}>
               from {p.starts} starts
             </span>
           </div>
-          <div style={{ fontSize: 8.5, color: 'var(--muted)', fontFamily: 'Space Mono, monospace', lineHeight: 1.5 }}>
-            <span style={{ color: 'var(--dim)' }}>METHOD </span>{method}
+          <div style={{ fontSize: 9.5, color: 'var(--muted)', fontFamily: 'Space Mono, monospace', lineHeight: 1.5 }}>
+            <span style={{ color: 'var(--muted)' }}>METHOD </span>{method}
           </div>
         </div>
       );
@@ -421,8 +421,8 @@ function PitchingEdgeTab({ gameData }) {
       <HudCard style={{ padding: '16px 18px', marginBottom: 20 }} accent="#00ff88">
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
           <span style={{ fontSize: 12, fontFamily: 'Orbitron, monospace', fontWeight: 900, color: '#00ff88', letterSpacing: '0.12em' }}>◆ PITCHER PROJECTION MODEL</span>
-          <span style={{ fontSize: 9, fontFamily: 'Space Mono, monospace', color: 'var(--muted)', letterSpacing: '0.1em' }}>likelihood to clear the line</span>
-          <span style={{ marginLeft: 'auto', fontSize: 9, fontFamily: 'Space Mono, monospace', color: 'var(--dim)' }}>
+          <span style={{ fontSize: 10, fontFamily: 'Space Mono, monospace', color: 'var(--muted)', letterSpacing: '0.1em' }}>likelihood to clear the line</span>
+          <span style={{ marginLeft: 'auto', fontSize: 10, fontFamily: 'Space Mono, monospace', color: 'var(--muted)' }}>
             {park.venue || ''}{park.factor != null ? ` · park ${park.factor}` : ''}
           </span>
         </div>
@@ -443,7 +443,7 @@ function PitchingEdgeTab({ gameData }) {
               <button key={line} onClick={() => setPLine(line)}
                 style={{ padding: '5px 11px', background: pLine === line ? 'rgba(0,212,255,0.12)' : 'transparent',
                   border: `1px solid ${pLine === line ? 'rgba(0,212,255,0.4)' : 'rgba(255,255,255,0.08)'}`,
-                  color: pLine === line ? 'var(--cyan)' : 'var(--dim)', fontFamily: 'Space Mono, monospace',
+                  color: pLine === line ? 'var(--cyan)' : 'var(--muted)', fontFamily: 'Space Mono, monospace',
                   fontSize: 10, cursor: 'pointer', borderRadius: 2 }}>{line}+</button>
             ))}
           </div>
@@ -458,19 +458,19 @@ function PitchingEdgeTab({ gameData }) {
             const pct = Math.round(p.prob * 100);
             const tc = colorFor(p.side);
             const isOpen = openId === p.id;
-            const confColor = p.confidence === 'HIGH' ? '#00ff88' : p.confidence === 'MED' ? '#ffd060' : 'var(--dim)';
+            const confColor = p.confidence === 'HIGH' ? '#00ff88' : p.confidence === 'MED' ? '#ffd060' : 'var(--muted)';
             return (
               <div key={p.id || i} style={{ padding: '10px', borderRadius: 3, background: i % 2 ? 'transparent' : 'rgba(255,255,255,0.02)' }}>
                 <div onClick={() => setOpenId(isOpen ? null : p.id)} style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', cursor: 'pointer', userSelect: 'none' }}>
-                  <span style={{ width: 20, textAlign: 'center', fontSize: 14, fontFamily: 'Orbitron, monospace', fontWeight: 900, color: i === 0 ? '#00ff88' : 'var(--dim)' }}>{i + 1}</span>
+                  <span style={{ width: 20, textAlign: 'center', fontSize: 14, fontFamily: 'Orbitron, monospace', fontWeight: 900, color: i === 0 ? '#00ff88' : 'var(--muted)' }}>{i + 1}</span>
                   <div style={{ flex: 1, minWidth: 160 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
                       <span style={{ fontSize: 13, fontFamily: 'Space Mono, monospace', color: 'var(--text)', fontWeight: 700 }}>{p.name}</span>
-                      <span style={{ fontSize: 8, padding: '1px 6px', border: `1px solid ${tc}66`, color: tc, fontFamily: 'Space Mono, monospace', borderRadius: 2 }}>
+                      <span style={{ fontSize: 9.5, padding: '1px 6px', border: `1px solid ${tc}66`, color: tc, fontFamily: 'Space Mono, monospace', borderRadius: 2 }}>
                         {abbrFor(p.side)}{p.throws ? ` ${p.throws}HP` : ''}
                       </span>
                     </div>
-                    <div style={{ fontSize: 9, color: 'var(--muted)', fontFamily: 'Space Mono, monospace', marginTop: 2 }}>
+                    <div style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'Space Mono, monospace', marginTop: 2 }}>
                       vs {p.opponent} · proj {p.expOuts} outs ({p.expIP} IP) · <span style={{ color: confColor }}>{p.confidence}</span>
                       {p.vsOpp?.summary && (
                         <span style={{ color: '#ffd060' }}>
@@ -493,7 +493,7 @@ function PitchingEdgeTab({ gameData }) {
           })}
         </div>
 
-        <div style={{ fontSize: 9, color: 'var(--muted)', fontFamily: 'Space Mono, monospace', marginTop: 12, lineHeight: 1.6 }}>
+        <div style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'Space Mono, monospace', marginTop: 12, lineHeight: 1.6 }}>
           Shows P(stat ≥ line). For K and OUTS a high % means the pitcher goes deep / misses bats; for ER and HR a high % means he's
           likely to get <span style={{ color: '#ff8a55' }}>hit hard</span> — read those as the OVER, not as "good". Tap a row for the math. Fair odds only, not a guarantee.
         </div>
@@ -507,8 +507,8 @@ function PitchingEdgeTab({ gameData }) {
       <HudCard style={{ padding: '16px 18px' }} accent={color}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
           <span style={{ fontSize: 11, fontFamily: 'Space Mono, monospace', fontWeight: 700, color: 'var(--text)' }}>{p.name}</span>
-          <span style={{ fontSize: 9, padding: '1px 6px', border: `1px solid ${color}66`, color, fontFamily: 'Space Mono, monospace', borderRadius: 2 }}>{abbr}</span>
-          <span style={{ fontSize: 9, color: 'var(--dim)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.12em' }}>
+          <span style={{ fontSize: 10, padding: '1px 6px', border: `1px solid ${color}66`, color, fontFamily: 'Space Mono, monospace', borderRadius: 2 }}>{abbr}</span>
+          <span style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.12em' }}>
             LAST {p.gameLog.length} STARTS
           </span>
         </div>
@@ -527,19 +527,19 @@ function PitchingEdgeTab({ gameData }) {
       <HudCard style={{ padding: '16px 18px' }} accent={color}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
           <span style={{ fontSize: 11, fontFamily: 'Space Mono, monospace', fontWeight: 700, color: 'var(--text)' }}>{p.name}</span>
-          <span style={{ fontSize: 9, padding: '1px 6px', border: `1px solid ${color}66`, color, fontFamily: 'Space Mono, monospace', borderRadius: 2 }}>{abbr}</span>
-          <span style={{ fontSize: 9, color: '#ffd060', fontFamily: 'Space Mono, monospace', letterSpacing: '0.12em' }}>
+          <span style={{ fontSize: 10, padding: '1px 6px', border: `1px solid ${color}66`, color, fontFamily: 'Space Mono, monospace', borderRadius: 2 }}>{abbr}</span>
+          <span style={{ fontSize: 10, color: '#ffd060', fontFamily: 'Space Mono, monospace', letterSpacing: '0.12em' }}>
             vs {p.opponent?.toUpperCase() || 'OPP'}
           </span>
           {p.vsOpp?.seasonSpan && (
-            <span style={{ fontSize: 9, color: 'var(--dim)', fontFamily: 'Space Mono, monospace' }}>
+            <span style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'Space Mono, monospace' }}>
               {p.vsOpp.seasonSpan[0] === p.vsOpp.seasonSpan[1]
                 ? p.vsOpp.seasonSpan[0]
                 : `${p.vsOpp.seasonSpan[0]}–${p.vsOpp.seasonSpan[1]}`}
             </span>
           )}
           {p.vsOpp?.totalStarts > (p.vsOpp?.games?.length || 0) && (
-            <span style={{ fontSize: 8.5, color: 'var(--dim)', fontFamily: 'Space Mono, monospace' }}>
+            <span style={{ fontSize: 9.5, color: 'var(--muted)', fontFamily: 'Space Mono, monospace' }}>
               · chart shows last {p.vsOpp.games.length} of {p.vsOpp.totalStarts}
             </span>
           )}
@@ -549,7 +549,7 @@ function PitchingEdgeTab({ gameData }) {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 6, marginBottom: 14 }}>
               {[['STARTS', s.starts], ['IP', s.ip], ['K', s.k], ['ERA', s.era != null ? s.era.toFixed(2) : '—'], ['K/9', s.k9 ?? '—']].map(([l, v]) => (
                 <div key={l} style={{ textAlign: 'center', padding: '7px 4px', background: 'var(--surface)', borderRadius: 3 }}>
-                  <div style={{ fontSize: 8, color: 'var(--dim)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.1em', marginBottom: 3 }}>{l}</div>
+                  <div style={{ fontSize: 9.5, color: 'var(--muted)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.1em', marginBottom: 3 }}>{l}</div>
                   <div style={{ fontSize: 14, fontFamily: 'Orbitron, monospace', color, fontWeight: 700 }}>{v}</div>
                 </div>
               ))}
@@ -558,7 +558,7 @@ function PitchingEdgeTab({ gameData }) {
               emptyLabel="NO STARTS VS THIS TEAM" accent={color} colorFor={mlbPitcherStatColor} />
           </>
         ) : (
-          <div style={{ fontSize: 10, color: 'var(--dim)', fontFamily: 'Space Mono, monospace', padding: '14px 0', letterSpacing: '0.08em' }}>
+          <div style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'Space Mono, monospace', padding: '14px 0', letterSpacing: '0.08em' }}>
             HAS NOT FACED THIS TEAM (last 3 seasons)
           </div>
         )}
@@ -619,7 +619,7 @@ function HighContactTab({ gameData }) {
   const SUB_ORDER = ['pitcherTraffic', 'pitchType', 'oppVsHand', 'lineupStrength', 'weather', 'bvp'];
 
   const riskColor = score =>
-    score == null ? 'var(--dim)' :
+    score == null ? 'var(--muted)' :
     score >= 65   ? '#ff6b35' :
     score >= 40   ? '#ffd060' :
                     '#00ff88';
@@ -641,7 +641,7 @@ function HighContactTab({ gameData }) {
 
   // Small caption under a data section showing where the numbers came from.
   const SourceTag = ({ children }) => (
-    <span style={{ fontSize: 8, color: 'var(--dim)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.04em', textTransform: 'none' }}>
+    <span style={{ fontSize: 9.5, color: 'var(--muted)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.04em', textTransform: 'none' }}>
       · src: {children}
     </span>
   );
@@ -656,8 +656,8 @@ function HighContactTab({ gameData }) {
       <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid rgba(255,255,255,0.04)' }}>
         <div onClick={() => setOpen(o => !o)} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 7, userSelect: 'none' }}>
           <span style={{ fontSize: 12, color: 'var(--cyan)', display: 'inline-block', transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s' }}>▸</span>
-          <span style={{ fontSize: 9, color: 'var(--cyan)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.18em', fontWeight: 700 }}>METHODOLOGY & SOURCES</span>
-          <span style={{ fontSize: 8, color: 'var(--dim)', fontFamily: 'Space Mono, monospace' }}>· verify every number</span>
+          <span style={{ fontSize: 10, color: 'var(--cyan)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.18em', fontWeight: 700 }}>METHODOLOGY & SOURCES</span>
+          <span style={{ fontSize: 9.5, color: 'var(--muted)', fontFamily: 'Space Mono, monospace' }}>· verify every number</span>
         </div>
         {open && (
           <div style={{ marginTop: 10, animation: 'fadeUp 0.25s ease', display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -667,42 +667,42 @@ function HighContactTab({ gameData }) {
                 <div key={m.key} style={{ padding: '10px 12px', background: 'var(--surface)', borderRadius: 3, border: '1px solid rgba(255,255,255,0.04)' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6, flexWrap: 'wrap', gap: 6 }}>
                     <span style={{ fontSize: 10, fontFamily: 'Space Mono, monospace', color: 'var(--text)', fontWeight: 700, letterSpacing: '0.08em' }}>
-                      {m.label} <span style={{ color: 'var(--dim)', fontWeight: 400 }}>· weight {Math.round(m.weight * 100)}%</span>
+                      {m.label} <span style={{ color: 'var(--muted)', fontWeight: 400 }}>· weight {Math.round(m.weight * 100)}%</span>
                     </span>
                     <span style={{ fontSize: 11, fontFamily: 'Orbitron, monospace', color: c, fontWeight: 700 }}>
                       {m.score != null ? `score ${m.score}` : 'N/A'}
                     </span>
                   </div>
-                  <div style={{ fontSize: 9, fontFamily: 'Space Mono, monospace', color: 'var(--muted)', marginBottom: 3 }}>
-                    <span style={{ color: 'var(--dim)' }}>SOURCE </span>{m.source}
+                  <div style={{ fontSize: 10, fontFamily: 'Space Mono, monospace', color: 'var(--muted)', marginBottom: 3 }}>
+                    <span style={{ color: 'var(--muted)' }}>SOURCE </span>{m.source}
                   </div>
-                  <div style={{ fontSize: 8.5, fontFamily: 'Space Mono, monospace', color: 'var(--cyan)', wordBreak: 'break-all', marginBottom: 6, lineHeight: 1.5 }}>
+                  <div style={{ fontSize: 9.5, fontFamily: 'Space Mono, monospace', color: 'var(--cyan)', wordBreak: 'break-all', marginBottom: 6, lineHeight: 1.5 }}>
                     {m.endpoint}
                   </div>
                   {m.inputs && Object.keys(m.inputs).length > 0 && (
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 6 }}>
                       {Object.entries(m.inputs).map(([k, v]) => (
-                        <span key={k} style={{ fontSize: 8.5, fontFamily: 'Space Mono, monospace', color: 'var(--text)', padding: '2px 6px', background: 'rgba(255,255,255,0.03)', borderRadius: 2, border: '1px solid rgba(255,255,255,0.05)' }}>
-                          <span style={{ color: 'var(--dim)' }}>{k}=</span>{formatInputVal(v)}
+                        <span key={k} style={{ fontSize: 9.5, fontFamily: 'Space Mono, monospace', color: 'var(--text)', padding: '2px 6px', background: 'rgba(255,255,255,0.03)', borderRadius: 2, border: '1px solid rgba(255,255,255,0.05)' }}>
+                          <span style={{ color: 'var(--muted)' }}>{k}=</span>{formatInputVal(v)}
                         </span>
                       ))}
                     </div>
                   )}
                   {m.formula && (
-                    <div style={{ fontSize: 8.5, fontFamily: 'Space Mono, monospace', color: 'var(--muted)', lineHeight: 1.55 }}>
-                      <span style={{ color: 'var(--dim)' }}>CALC </span>{m.formula}
+                    <div style={{ fontSize: 9.5, fontFamily: 'Space Mono, monospace', color: 'var(--muted)', lineHeight: 1.55 }}>
+                      <span style={{ color: 'var(--muted)' }}>CALC </span>{m.formula}
                     </div>
                   )}
                   {m.note && (
-                    <div style={{ fontSize: 8.5, fontFamily: 'Space Mono, monospace', color: '#ff8a55', lineHeight: 1.55, marginTop: m.formula ? 4 : 0 }}>
-                      <span style={{ color: 'var(--dim)' }}>NOTE </span>{m.note} → excluded, weights renormalized
+                    <div style={{ fontSize: 9.5, fontFamily: 'Space Mono, monospace', color: '#ff8a55', lineHeight: 1.55, marginTop: m.formula ? 4 : 0 }}>
+                      <span style={{ color: 'var(--muted)' }}>NOTE </span>{m.note} → excluded, weights renormalized
                     </div>
                   )}
                 </div>
               );
             })}
             {highContactData.riskFormula && (
-              <div style={{ fontSize: 8.5, fontFamily: 'Space Mono, monospace', color: 'var(--muted)', lineHeight: 1.6, padding: '8px 10px', background: 'rgba(0,212,255,0.04)', borderRadius: 3, border: '1px solid rgba(0,212,255,0.12)' }}>
+              <div style={{ fontSize: 9.5, fontFamily: 'Space Mono, monospace', color: 'var(--muted)', lineHeight: 1.6, padding: '8px 10px', background: 'rgba(0,212,255,0.04)', borderRadius: 3, border: '1px solid rgba(0,212,255,0.12)' }}>
                 <span style={{ color: 'var(--cyan)' }}>COMPOSITE </span>{highContactData.riskFormula}
               </div>
             )}
@@ -719,7 +719,7 @@ function HighContactTab({ gameData }) {
     if (!f5) {
       return (
         <HudCard style={{ padding: '14px 18px', marginBottom: 14 }} accent="var(--dim)">
-          <div style={{ fontSize: 10, fontFamily: 'Space Mono, monospace', color: 'var(--dim)', letterSpacing: '0.08em' }}>
+          <div style={{ fontSize: 10, fontFamily: 'Space Mono, monospace', color: 'var(--muted)', letterSpacing: '0.08em' }}>
             ◆ F5 MONEY LINE MODEL — unavailable (model not trained yet, or starters unconfirmed)
           </div>
         </HudCard>
@@ -739,9 +739,9 @@ function HighContactTab({ gameData }) {
       <HudCard style={{ padding: '16px 18px', marginBottom: 14 }} accent="#00ff88">
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
           <span style={{ fontSize: 12, fontFamily: 'Orbitron, monospace', fontWeight: 900, color: '#00ff88', letterSpacing: '0.12em' }}>◆ F5 MONEY LINE MODEL</span>
-          <span style={{ fontSize: 9, fontFamily: 'Space Mono, monospace', color: 'var(--muted)', letterSpacing: '0.1em' }}>XGBoost · who leads after 5 innings</span>
+          <span style={{ fontSize: 10, fontFamily: 'Space Mono, monospace', color: 'var(--muted)', letterSpacing: '0.1em' }}>XGBoost · who leads after 5 innings</span>
           {val.home_away_auc != null && (
-            <span style={{ marginLeft: 'auto', fontSize: 9, fontFamily: 'Space Mono, monospace', color: 'var(--dim)' }}>val AUC {val.home_away_auc.toFixed(3)}</span>
+            <span style={{ marginLeft: 'auto', fontSize: 10, fontFamily: 'Space Mono, monospace', color: 'var(--muted)' }}>val AUC {val.home_away_auc.toFixed(3)}</span>
           )}
         </div>
 
@@ -757,7 +757,7 @@ function HighContactTab({ gameData }) {
                 </div>
                 <span style={{ width: 44, textAlign: 'right', fontSize: 16, fontFamily: 'Orbitron, monospace', fontWeight: 900, color: r.color }}>{pct}%</span>
                 <span style={{ width: 50, textAlign: 'right', fontSize: 10, fontFamily: 'Space Mono, monospace', color: 'var(--muted)' }}>{fmtOdds(r.odds)}</span>
-                <span style={{ width: 56, fontSize: 8, color: '#00ff88', fontFamily: 'Orbitron, monospace', fontWeight: 700, letterSpacing: '0.1em' }}>{isPick ? '◄ PICK' : ''}</span>
+                <span style={{ width: 56, fontSize: 9.5, color: '#00ff88', fontFamily: 'Orbitron, monospace', fontWeight: 700, letterSpacing: '0.1em' }}>{isPick ? '◄ PICK' : ''}</span>
               </div>
             );
           })}
@@ -771,24 +771,24 @@ function HighContactTab({ gameData }) {
         <div style={{ marginTop: 10, paddingTop: 8, borderTop: '1px solid rgba(255,255,255,0.04)' }}>
           <div onClick={() => setOpen(o => !o)} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 7, userSelect: 'none' }}>
             <span style={{ fontSize: 12, color: 'var(--cyan)', display: 'inline-block', transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s' }}>▸</span>
-            <span style={{ fontSize: 9, color: 'var(--cyan)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.16em', fontWeight: 700 }}>MODEL DETAILS & FEATURES</span>
+            <span style={{ fontSize: 10, color: 'var(--cyan)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.16em', fontWeight: 700 }}>MODEL DETAILS & FEATURES</span>
           </div>
           {open && (
             <div style={{ marginTop: 10, animation: 'fadeUp 0.25s ease' }}>
-              <div style={{ fontSize: 9, fontFamily: 'Space Mono, monospace', color: 'var(--muted)', marginBottom: 8, lineHeight: 1.7 }}>
-                <span style={{ color: 'var(--dim)' }}>SOURCE </span>{f5.source}<br />
-                <span style={{ color: 'var(--dim)' }}>VALIDATION ({val.split || '—'}) </span>
+              <div style={{ fontSize: 10, fontFamily: 'Space Mono, monospace', color: 'var(--muted)', marginBottom: 8, lineHeight: 1.7 }}>
+                <span style={{ color: 'var(--muted)' }}>SOURCE </span>{f5.source}<br />
+                <span style={{ color: 'var(--muted)' }}>VALIDATION ({val.split || '—'}) </span>
                 log-loss {fmtNum(val.log_loss)} vs base {fmtNum(val.base_rate_log_loss)} / logistic {fmtNum(val.logistic_log_loss)}
                 {val.accuracy != null && ` · acc ${(val.accuracy * 100).toFixed(1)}%`}
                 {val.home_away_auc != null && ` · home/away AUC ${val.home_away_auc.toFixed(3)}`}
                 {val.n_val != null && ` · n=${val.n_val}`}<br />
-                <span style={{ color: 'var(--dim)' }}>MODEL </span>{f5.model?.nTrees} trees · trained {f5.model?.trainedAt ? String(f5.model.trainedAt).slice(0, 10) : '—'}
+                <span style={{ color: 'var(--muted)' }}>MODEL </span>{f5.model?.nTrees} trees · trained {f5.model?.trainedAt ? String(f5.model.trainedAt).slice(0, 10) : '—'}
               </div>
-              <div style={{ fontSize: 8.5, color: 'var(--dim)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.12em', marginBottom: 6 }}>FEATURE VECTOR (entering this game)</div>
+              <div style={{ fontSize: 9.5, color: 'var(--muted)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.12em', marginBottom: 6 }}>FEATURE VECTOR (entering this game)</div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
                 {Object.entries(f5.features).map(([k, v]) => (
-                  <span key={k} style={{ fontSize: 8.5, fontFamily: 'Space Mono, monospace', color: 'var(--text)', padding: '2px 6px', background: 'rgba(255,255,255,0.03)', borderRadius: 2, border: '1px solid rgba(255,255,255,0.05)' }}>
-                    <span style={{ color: 'var(--dim)' }}>{k}=</span>{formatInputVal(v)}
+                  <span key={k} style={{ fontSize: 9.5, fontFamily: 'Space Mono, monospace', color: 'var(--text)', padding: '2px 6px', background: 'rgba(255,255,255,0.03)', borderRadius: 2, border: '1px solid rgba(255,255,255,0.05)' }}>
+                    <span style={{ color: 'var(--muted)' }}>{k}=</span>{formatInputVal(v)}
                   </span>
                 ))}
               </div>
@@ -803,7 +803,7 @@ function HighContactTab({ gameData }) {
     if (!side?.pitcher) {
       return (
         <HudCard style={{ padding: 18, textAlign: 'center' }} accent="var(--dim)">
-          <div style={{ color: 'var(--dim)', fontFamily: 'Space Mono, monospace', fontSize: 10 }}>SP NOT ANNOUNCED</div>
+          <div style={{ color: 'var(--muted)', fontFamily: 'Space Mono, monospace', fontSize: 10 }}>SP NOT ANNOUNCED</div>
         </HudCard>
       );
     }
@@ -818,7 +818,7 @@ function HighContactTab({ gameData }) {
       <HudCard style={{ padding: 18 }} accent={color}>
         <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start', marginBottom: 14 }}>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 9, fontFamily: 'Space Mono, monospace', color, letterSpacing: '0.18em', marginBottom: 4 }}>
+            <div style={{ fontSize: 10, fontFamily: 'Space Mono, monospace', color, letterSpacing: '0.18em', marginBottom: 4 }}>
               {abbr}{side.pitcher.throws ? ` · ${side.pitcher.throws}HP` : ''}
             </div>
             <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 16, fontWeight: 700, color: 'var(--text)', marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -828,24 +828,24 @@ function HighContactTab({ gameData }) {
           </div>
           <div style={{ textAlign: 'center', flexShrink: 0 }}>
             <RiskGauge score={score} color={rc} />
-            <div style={{ fontSize: 9, color: rc, fontFamily: 'Space Mono, monospace', fontWeight: 700, letterSpacing: '0.18em', marginTop: 4 }}>
+            <div style={{ fontSize: 10, color: rc, fontFamily: 'Space Mono, monospace', fontWeight: 700, letterSpacing: '0.18em', marginTop: 4 }}>
               {side.riskLevel || '—'} RISK
             </div>
           </div>
         </div>
 
         <div style={{ paddingTop: 12, borderTop: '1px solid rgba(255,255,255,0.04)', marginBottom: 12 }}>
-          <div style={{ fontSize: 9, color: 'var(--dim)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.18em', marginBottom: 8 }}>BREAKDOWN <SourceTag>sources + math below ▾</SourceTag></div>
+          <div style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.18em', marginBottom: 8 }}>BREAKDOWN <SourceTag>sources + math below ▾</SourceTag></div>
           {SUB_ORDER.map(key => {
             const raw = subs[key];
             const w = weights[key] || 0;
             const present = raw != null;
-            const subColor = present ? riskColor(raw) : 'var(--dim)';
+            const subColor = present ? riskColor(raw) : 'var(--muted)';
             return (
               <div key={key} style={{ marginBottom: 6 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3 }}>
-                  <span style={{ fontSize: 9, color: 'var(--muted)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.1em' }}>
-                    {SUB_LABELS[key]} <span style={{ color: 'var(--dim)' }}>· {Math.round(w * 100)}%</span>
+                  <span style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.1em' }}>
+                    {SUB_LABELS[key]} <span style={{ color: 'var(--muted)' }}>· {Math.round(w * 100)}%</span>
                   </span>
                   <span style={{ fontSize: 10, fontFamily: 'Space Mono, monospace', color: subColor, fontWeight: 700 }}>
                     {present ? raw : '—'}
@@ -862,7 +862,7 @@ function HighContactTab({ gameData }) {
         </div>
 
         <div style={{ paddingTop: 12, borderTop: '1px solid rgba(255,255,255,0.04)', marginBottom: 12 }}>
-          <div style={{ fontSize: 9, color: 'var(--dim)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.18em', marginBottom: 8 }}>PITCHER · CURRENT vs PREV <SourceTag>MLB Stats API</SourceTag></div>
+          <div style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.18em', marginBottom: 8 }}>PITCHER · CURRENT vs PREV <SourceTag>MLB Stats API</SourceTag></div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6 }}>
             {[
               ['ERA',   cur.era,    prev.era,    v => v != null ? Number(v).toFixed(2) : '—'],
@@ -875,9 +875,9 @@ function HighContactTab({ gameData }) {
               ['HR/9',  cur.hrPer9, prev.hrPer9, v => v != null ? Number(v).toFixed(2) : '—'],
             ].map(([l, c, p, fmt]) => (
               <div key={l} style={{ padding: '7px 6px', background: 'var(--surface)', borderRadius: 3, textAlign: 'center' }}>
-                <div style={{ fontSize: 8, color: 'var(--dim)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.1em', marginBottom: 3 }}>{l}</div>
+                <div style={{ fontSize: 9.5, color: 'var(--muted)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.1em', marginBottom: 3 }}>{l}</div>
                 <div style={{ fontSize: 13, fontFamily: 'Orbitron, monospace', color, fontWeight: 700, lineHeight: 1 }}>{fmt(c)}</div>
-                <div style={{ fontSize: 8, fontFamily: 'Space Mono, monospace', color: 'var(--muted)', marginTop: 3 }}>prev: {fmt(p)}</div>
+                <div style={{ fontSize: 9.5, fontFamily: 'Space Mono, monospace', color: 'var(--muted)', marginTop: 3 }}>prev: {fmt(p)}</div>
               </div>
             ))}
           </div>
@@ -885,13 +885,13 @@ function HighContactTab({ gameData }) {
 
         {side.arsenal?.length > 0 && (
           <div style={{ paddingTop: 12, borderTop: '1px solid rgba(255,255,255,0.04)', marginBottom: 12 }}>
-            <div style={{ fontSize: 9, color: 'var(--dim)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.18em', marginBottom: 8 }}>
+            <div style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.18em', marginBottom: 8 }}>
               ARSENAL · TOP {Math.min(side.arsenal.length, 5)} PITCHES <SourceTag>Baseball Savant · Statcast</SourceTag>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
               {side.arsenal.slice(0, 5).map((p, i) => {
                 const xw = p.xwoba;
-                const xwColor = xw == null ? 'var(--dim)' :
+                const xwColor = xw == null ? 'var(--muted)' :
                                 xw >= 0.380 ? '#ff6b35' :
                                 xw >= 0.330 ? '#ffd060' :
                                 xw >= 0.290 ? 'var(--cyan)' : '#00ff88';
@@ -902,7 +902,7 @@ function HighContactTab({ gameData }) {
                     <div style={{ fontSize: 10, fontFamily: 'Space Mono, monospace', color: xwColor, fontWeight: 700, textAlign: 'right' }}>
                       xwOBA {xw != null ? xw.toFixed(3) : '—'}
                     </div>
-                    <div style={{ fontSize: 9, fontFamily: 'Space Mono, monospace', color: 'var(--muted)', textAlign: 'right' }}>
+                    <div style={{ fontSize: 10, fontFamily: 'Space Mono, monospace', color: 'var(--muted)', textAlign: 'right' }}>
                       whiff {p.whiffPct != null ? `${p.whiffPct.toFixed(0)}%` : '—'}
                     </div>
                   </div>
@@ -914,17 +914,17 @@ function HighContactTab({ gameData }) {
 
         {side.oppHandSplits && (
           <div style={{ paddingTop: 12, borderTop: '1px solid rgba(255,255,255,0.04)', marginBottom: 12 }}>
-            <div style={{ fontSize: 9, color: 'var(--dim)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.18em', marginBottom: 8 }}>
+            <div style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.18em', marginBottom: 8 }}>
               {side.opponent ? side.opponent.toUpperCase() : 'OPP'} vs {side.pitcher.throws === 'L' ? 'LHP' : 'RHP'} <SourceTag>MLB Stats API · statSplits</SourceTag>
             </div>
             {(() => {
               const sp = side.pitcher.throws === 'L' ? side.oppHandSplits.vsL : side.oppHandSplits.vsR;
-              if (!sp) return <div style={{ fontSize: 10, color: 'var(--dim)', fontFamily: 'Space Mono, monospace' }}>NO SPLIT DATA</div>;
+              if (!sp) return <div style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'Space Mono, monospace' }}>NO SPLIT DATA</div>;
               return (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6 }}>
                   {[['AVG', sp.avg], ['OBP', sp.obp], ['SLG', sp.slg], ['OPS', sp.ops]].map(([l, v]) => (
                     <div key={l} style={{ padding: '6px 4px', textAlign: 'center', background: 'var(--surface)', borderRadius: 3 }}>
-                      <div style={{ fontSize: 8, color: 'var(--dim)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.1em', marginBottom: 2 }}>{l}</div>
+                      <div style={{ fontSize: 9.5, color: 'var(--muted)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.1em', marginBottom: 2 }}>{l}</div>
                       <div style={{ fontSize: 12, fontFamily: 'Orbitron, monospace', color: 'var(--text)', fontWeight: 700 }}>
                         {v != null ? v.toFixed(3) : '—'}
                       </div>
@@ -939,7 +939,7 @@ function HighContactTab({ gameData }) {
         <div style={{ paddingTop: 12, borderTop: '1px solid rgba(255,255,255,0.04)', display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center', marginBottom: 12 }}>
           {side.bullpen ? (
             <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-              <span style={{ fontSize: 9, color: 'var(--dim)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.15em' }}>BULLPEN <SourceTag>MLB Stats API</SourceTag></span>
+              <span style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.15em' }}>BULLPEN <SourceTag>MLB Stats API</SourceTag></span>
               <span style={{ fontSize: 11, fontFamily: 'Space Mono, monospace', color: 'var(--text)', fontWeight: 700 }}>
                 {side.bullpen.era != null ? side.bullpen.era.toFixed(2) : '—'} ERA
               </span>
@@ -948,13 +948,13 @@ function HighContactTab({ gameData }) {
               </span>
             </div>
           ) : (
-            <span style={{ fontSize: 10, color: 'var(--dim)', fontFamily: 'Space Mono, monospace' }}>BULLPEN —</span>
+            <span style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'Space Mono, monospace' }}>BULLPEN —</span>
           )}
           {side.weather && <WeatherPill weather={side.weather} />}
         </div>
 
         <div style={{ padding: '10px 12px', background: `${rc}10`, border: `1px solid ${rc}33`, borderRadius: 3 }}>
-          <div style={{ fontSize: 8, color: rc, fontFamily: 'Space Mono, monospace', letterSpacing: '0.2em', marginBottom: 4 }}>ANGLE</div>
+          <div style={{ fontSize: 9.5, color: rc, fontFamily: 'Space Mono, monospace', letterSpacing: '0.2em', marginBottom: 4 }}>ANGLE</div>
           <div style={{ fontSize: 11, color: 'var(--text)', fontFamily: 'Space Mono, monospace', lineHeight: 1.5 }}>{angleFor(side)}</div>
         </div>
 
@@ -971,8 +971,8 @@ function HighContactTab({ gameData }) {
           ].map(([key, lbl]) => {
             const ok = side.verified?.[key];
             return (
-              <span key={key} style={{ fontSize: 8, padding: '2px 6px', borderRadius: 2, fontFamily: 'Space Mono, monospace', letterSpacing: '0.1em',
-                color: ok ? '#00ff88' : 'var(--dim)',
+              <span key={key} style={{ fontSize: 9.5, padding: '2px 6px', borderRadius: 2, fontFamily: 'Space Mono, monospace', letterSpacing: '0.1em',
+                color: ok ? '#00ff88' : 'var(--muted)',
                 background: ok ? 'rgba(0,255,136,0.08)' : 'transparent',
                 border: `1px solid ${ok ? 'rgba(0,255,136,0.25)' : 'rgba(255,255,255,0.05)'}` }}>
                 {ok ? '✓' : '○'} {lbl}
@@ -1054,11 +1054,11 @@ function LowHrModelTab({ gameData }) {
     IN:      { color: '#00ff88', label: '✓ WIND IN' },
     DOME:    { color: 'var(--cyan)', label: '● DOME / ROOF CLOSED' },
     NEUTRAL: { color: 'var(--muted)', label: '○ WIND NEUTRAL' },
-  }[windFlag] || { color: 'var(--dim)', label: '—' };
+  }[windFlag] || { color: 'var(--muted)', label: '—' };
 
   const parkColor = park?.classification === 'HR-SUPPRESSING' ? '#00ff88'
     : park?.classification === 'HR-FRIENDLY' ? '#ff6b35'
-    : park?.classification === 'NEUTRAL' ? '#ffd060' : 'var(--dim)';
+    : park?.classification === 'NEUTRAL' ? '#ffd060' : 'var(--muted)';
   // Park factor bar: 80 (Oracle) → 0%, 125 (Great American) → 100%
   const parkPct = park?.factor != null ? Math.max(0, Math.min(100, (park.factor - 80) / 45 * 100)) : 0;
 
@@ -1066,16 +1066,16 @@ function LowHrModelTab({ gameData }) {
     if (!p) {
       return (
         <HudCard style={{ padding: 18, textAlign: 'center' }} accent="var(--dim)">
-          <div style={{ color: 'var(--dim)', fontFamily: 'Space Mono, monospace', fontSize: 10 }}>SP NOT ANNOUNCED</div>
+          <div style={{ color: 'var(--muted)', fontFamily: 'Space Mono, monospace', fontSize: 10 }}>SP NOT ANNOUNCED</div>
         </HudCard>
       );
     }
-    const hr9Color = p.hrPer9 == null ? 'var(--dim)' : p.hrPer9 <= 0.80 ? '#00ff88' : p.hrPer9 <= 1.10 ? '#ffd060' : '#ff6b35';
+    const hr9Color = p.hrPer9 == null ? 'var(--muted)' : p.hrPer9 <= 0.80 ? '#00ff88' : p.hrPer9 <= 1.10 ? '#ffd060' : '#ff6b35';
     return (
       <HudCard style={{ padding: 18 }} accent={color}>
         <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start', marginBottom: 12 }}>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 9, fontFamily: 'Space Mono, monospace', color, letterSpacing: '0.18em', marginBottom: 4 }}>
+            <div style={{ fontSize: 10, fontFamily: 'Space Mono, monospace', color, letterSpacing: '0.18em', marginBottom: 4 }}>
               {abbr}{p.throws ? ` · ${p.throws}HP` : ''} · vs {oppAbbr} LINEUP
             </div>
             <div style={{ fontFamily: 'Space Mono, monospace', fontSize: 15, fontWeight: 700, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -1083,23 +1083,23 @@ function LowHrModelTab({ gameData }) {
             </div>
             <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
               {p.top15 && (
-                <span style={{ fontSize: 9, padding: '2px 8px', background: 'rgba(0,255,136,0.12)', border: '1px solid rgba(0,255,136,0.35)', color: '#00ff88', fontFamily: 'Orbitron, monospace', fontWeight: 700, borderRadius: 2, letterSpacing: '0.12em' }}>
+                <span style={{ fontSize: 10, padding: '2px 8px', background: 'rgba(0,255,136,0.12)', border: '1px solid rgba(0,255,136,0.35)', color: '#00ff88', fontFamily: 'Orbitron, monospace', fontWeight: 700, borderRadius: 2, letterSpacing: '0.12em' }}>
                   ★ TOP-15 LOW HR/9
                 </span>
               )}
               {p.rank != null && (
-                <span style={{ fontSize: 9, padding: '2px 8px', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--muted)', fontFamily: 'Space Mono, monospace', borderRadius: 2 }}>
+                <span style={{ fontSize: 10, padding: '2px 8px', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--muted)', fontFamily: 'Space Mono, monospace', borderRadius: 2 }}>
                   RANK #{p.rank}/{p.totalRanked}
                 </span>
               )}
             </div>
           </div>
           <div style={{ textAlign: 'center', flexShrink: 0 }}>
-            <div style={{ fontSize: 8, color: 'var(--dim)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.16em', marginBottom: 2 }}>HR/9</div>
+            <div style={{ fontSize: 9.5, color: 'var(--muted)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.16em', marginBottom: 2 }}>HR/9</div>
             <div style={{ fontSize: 30, fontFamily: 'Orbitron, monospace', fontWeight: 900, color: hr9Color, lineHeight: 1 }}>
               {p.hrPer9 != null ? p.hrPer9.toFixed(2) : '—'}
             </div>
-            <div style={{ fontSize: 8, color: 'var(--muted)', fontFamily: 'Space Mono, monospace', marginTop: 3 }}>
+            <div style={{ fontSize: 9.5, color: 'var(--muted)', fontFamily: 'Space Mono, monospace', marginTop: 3 }}>
               lg avg {leagueAvgHr9 != null ? leagueAvgHr9.toFixed(2) : '—'}
             </div>
           </div>
@@ -1112,7 +1112,7 @@ function LowHrModelTab({ gameData }) {
             ['HR L3 GM', p.hrLast3 != null ? `${p.hrLast3}` : '—', p.hrLast3 != null && p.hrLast3 === 0 ? '#00ff88' : p.hrLast3 >= 3 ? '#ff6b35' : 'var(--text)'],
           ].map(([l, v, c]) => (
             <div key={l} style={{ textAlign: 'center', padding: '7px 4px', background: 'var(--surface)', borderRadius: 3 }}>
-              <div style={{ fontSize: 8, color: 'var(--dim)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.08em', marginBottom: 3 }}>{l}</div>
+              <div style={{ fontSize: 9.5, color: 'var(--muted)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.08em', marginBottom: 3 }}>{l}</div>
               <div style={{ fontSize: 14, fontFamily: 'Orbitron, monospace', color: c, fontWeight: 700 }}>{v}</div>
             </div>
           ))}
@@ -1134,9 +1134,9 @@ function LowHrModelTab({ gameData }) {
           <div style={{ flex: 1, minWidth: 170 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5, flexWrap: 'wrap' }}>
               <span style={{ fontSize: 14, fontFamily: 'Space Mono, monospace', color: 'var(--text)', fontWeight: 700 }}>{c.name}</span>
-              <span style={{ fontSize: 9, padding: '2px 7px', border: `1px solid ${tc}66`, color: tc, fontFamily: 'Space Mono, monospace', borderRadius: 2, letterSpacing: '0.08em' }}>{sideAbbr(c.side)}</span>
+              <span style={{ fontSize: 10, padding: '2px 7px', border: `1px solid ${tc}66`, color: tc, fontFamily: 'Space Mono, monospace', borderRadius: 2, letterSpacing: '0.08em' }}>{sideAbbr(c.side)}</span>
               {c.order && (
-                <span style={{ fontSize: 9, padding: '2px 7px', border: '1px solid rgba(255,255,255,0.1)', color: c.order >= 7 ? '#00ff88' : 'var(--muted)', fontFamily: 'Space Mono, monospace', borderRadius: 2 }}>
+                <span style={{ fontSize: 10, padding: '2px 7px', border: '1px solid rgba(255,255,255,0.1)', color: c.order >= 7 ? '#00ff88' : 'var(--muted)', fontFamily: 'Space Mono, monospace', borderRadius: 2 }}>
                   BATS #{c.order}
                 </span>
               )}
@@ -1148,17 +1148,17 @@ function LowHrModelTab({ gameData }) {
           </div>
           <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
             <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: 8, color: 'var(--dim)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.14em', marginBottom: 2 }}>MODEL NO-HR</div>
+              <div style={{ fontSize: 9.5, color: 'var(--muted)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.14em', marginBottom: 2 }}>MODEL NO-HR</div>
               <div style={{ fontSize: 20, fontFamily: 'Orbitron, monospace', fontWeight: 700, color: rc }}>
                 {c.modelNoHrPct != null ? `${c.modelNoHrPct.toFixed(1)}%` : '—'}
               </div>
-              <div style={{ fontSize: 8, color: 'var(--muted)', fontFamily: 'Space Mono, monospace', marginTop: 1 }}>fair {fmtOdds(c.fairOdds)}</div>
+              <div style={{ fontSize: 9.5, color: 'var(--muted)', fontFamily: 'Space Mono, monospace', marginTop: 1 }}>fair {fmtOdds(c.fairOdds)}</div>
             </div>
             <div style={{ textAlign: 'center', padding: '6px 12px', background: `${rc}10`, border: `1px solid ${rc}33`, borderRadius: 3 }}>
               <div style={{ fontSize: 22, fontFamily: 'Orbitron, monospace', fontWeight: 900, color: rc, lineHeight: 1 }}>
                 {c.score}<span style={{ fontSize: 11, color: 'var(--muted)' }}>/{c.maxScore}</span>
               </div>
-              <div style={{ fontSize: 8, color: rc, fontFamily: 'Space Mono, monospace', letterSpacing: '0.16em', marginTop: 3, fontWeight: 700 }}>{c.rating}</div>
+              <div style={{ fontSize: 9.5, color: rc, fontFamily: 'Space Mono, monospace', letterSpacing: '0.16em', marginTop: 3, fontWeight: 700 }}>{c.rating}</div>
             </div>
           </div>
         </div>
@@ -1167,9 +1167,9 @@ function LowHrModelTab({ gameData }) {
           {(c.breakdown || []).map(b => {
             const full = b.pts >= b.max;
             const partial = b.pts > 0 && b.pts < b.max;
-            const bc = full ? '#00ff88' : partial ? '#ffd060' : 'var(--dim)';
+            const bc = full ? '#00ff88' : partial ? '#ffd060' : 'var(--muted)';
             return (
-              <span key={b.key} title={b.detail} style={{ fontSize: 8, padding: '3px 7px', borderRadius: 2, fontFamily: 'Space Mono, monospace', letterSpacing: '0.06em', cursor: 'help',
+              <span key={b.key} title={b.detail} style={{ fontSize: 9.5, padding: '3px 7px', borderRadius: 2, fontFamily: 'Space Mono, monospace', letterSpacing: '0.06em', cursor: 'help',
                 color: bc,
                 background: b.pts > 0 ? `${full ? 'rgba(0,255,136,0.08)' : 'rgba(255,208,96,0.08)'}` : 'transparent',
                 border: `1px solid ${b.pts > 0 ? (full ? 'rgba(0,255,136,0.25)' : 'rgba(255,208,96,0.25)') : 'rgba(255,255,255,0.05)'}` }}>
@@ -1187,12 +1187,12 @@ function LowHrModelTab({ gameData }) {
             ['SZN HR', c.season?.hr != null ? `${c.season.hr} in ${c.season.pa} PA` : '—'],
             ['L15 HR', c.recent ? `${c.recent.hr15}` : '—'],
           ].map(([l, v]) => (
-            <span key={l} style={{ fontSize: 9, fontFamily: 'Space Mono, monospace', color: 'var(--muted)' }}>
-              <span style={{ color: 'var(--dim)', letterSpacing: '0.1em' }}>{l}</span> <span style={{ color: 'var(--text)', fontWeight: 700 }}>{v}</span>
+            <span key={l} style={{ fontSize: 10, fontFamily: 'Space Mono, monospace', color: 'var(--muted)' }}>
+              <span style={{ color: 'var(--muted)', letterSpacing: '0.1em' }}>{l}</span> <span style={{ color: 'var(--text)', fontWeight: 700 }}>{v}</span>
             </span>
           ))}
           {(c.flags || []).map(f => (
-            <span key={f} style={{ fontSize: 8, padding: '2px 7px', borderRadius: 2, fontFamily: 'Space Mono, monospace', letterSpacing: '0.08em',
+            <span key={f} style={{ fontSize: 9.5, padding: '2px 7px', borderRadius: 2, fontFamily: 'Space Mono, monospace', letterSpacing: '0.08em',
               color: '#ff6b35', background: 'rgba(255,107,53,0.08)', border: '1px solid rgba(255,107,53,0.25)' }}>
               ⚠ {f}
             </span>
@@ -1213,7 +1213,7 @@ function LowHrModelTab({ gameData }) {
       <HudCard style={{ padding: '14px 18px', marginBottom: 12 }} accent={parkColor}>
         <div style={{ display: 'flex', gap: 18, alignItems: 'center', flexWrap: 'wrap' }}>
           <div style={{ flex: 1, minWidth: 200 }}>
-            <div style={{ fontSize: 9, color: 'var(--dim)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.18em', marginBottom: 4 }}>BALLPARK</div>
+            <div style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.18em', marginBottom: 4 }}>BALLPARK</div>
             <div style={{ fontSize: 13, fontFamily: 'Space Mono, monospace', color: 'var(--text)', fontWeight: 700, marginBottom: 6 }}>
               {park?.venue || 'Unknown venue'}
               {park?.roofType ? <span style={{ color: 'var(--muted)', fontWeight: 400 }}> · {park.roofType}</span> : null}
@@ -1225,13 +1225,13 @@ function LowHrModelTab({ gameData }) {
               <span style={{ fontSize: 12, fontFamily: 'Orbitron, monospace', color: parkColor, fontWeight: 700 }}>
                 {park?.factor != null ? park.factor : '—'}
               </span>
-              <span style={{ fontSize: 9, padding: '2px 8px', border: `1px solid ${parkColor}44`, color: parkColor, fontFamily: 'Space Mono, monospace', borderRadius: 2, letterSpacing: '0.1em' }}>
+              <span style={{ fontSize: 10, padding: '2px 8px', border: `1px solid ${parkColor}44`, color: parkColor, fontFamily: 'Space Mono, monospace', borderRadius: 2, letterSpacing: '0.1em' }}>
                 {park?.classification || 'UNKNOWN'}
               </span>
             </div>
           </div>
           <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 9, padding: '4px 10px', border: `1px solid ${windChip.color}44`, color: windChip.color, fontFamily: 'Space Mono, monospace', borderRadius: 2, letterSpacing: '0.1em', fontWeight: 700 }}>
+            <span style={{ fontSize: 10, padding: '4px 10px', border: `1px solid ${windChip.color}44`, color: windChip.color, fontFamily: 'Space Mono, monospace', borderRadius: 2, letterSpacing: '0.1em', fontWeight: 700 }}>
               {windChip.label}
             </span>
             {weather && <WeatherPill weather={weather} />}
@@ -1246,8 +1246,8 @@ function LowHrModelTab({ gameData }) {
       </div>
 
       {/* Suggested slip */}
-      <HudCard style={{ padding: '16px 18px', marginBottom: 16 }} accent={slip.length ? '#00ff88' : 'var(--dim)'}>
-        <div style={{ fontSize: 9, color: slip.length ? '#00ff88' : 'var(--dim)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.22em', marginBottom: 10 }}>
+      <HudCard style={{ padding: '16px 18px', marginBottom: 16 }} accent={slip.length ? '#00ff88' : 'var(--muted)'}>
+        <div style={{ fontSize: 10, color: slip.length ? '#00ff88' : 'var(--muted)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.22em', marginBottom: 10 }}>
           ◆ SUGGESTED SLIP — UNDER 0.5 HR PARLAY
         </div>
         {slip.length ? (
@@ -1258,20 +1258,20 @@ function LowHrModelTab({ gameData }) {
                 <span style={{ fontSize: 12, fontFamily: 'Space Mono, monospace', color: 'var(--text)', fontWeight: 700, flex: 1, minWidth: 140 }}>
                   {s.name} <span style={{ color: 'var(--muted)', fontWeight: 400 }}>UNDER 0.5 HR</span>
                 </span>
-                <span style={{ fontSize: 9, fontFamily: 'Space Mono, monospace', color: sideColor(s.side) }}>{sideAbbr(s.side)} · #{s.order || '—'}</span>
+                <span style={{ fontSize: 10, fontFamily: 'Space Mono, monospace', color: sideColor(s.side) }}>{sideAbbr(s.side)} · #{s.order || '—'}</span>
                 <span style={{ fontSize: 10, fontFamily: 'Orbitron, monospace', color: ratingColor(s.rating), fontWeight: 700 }}>{s.score}/{s.maxScore}</span>
                 <span style={{ fontSize: 10, fontFamily: 'Space Mono, monospace', color: 'var(--text)' }}>
                   {s.modelNoHrPct != null ? `${s.modelNoHrPct.toFixed(1)}%` : '—'} <span style={{ color: 'var(--muted)' }}>fair {fmtOdds(s.fairOdds)}</span>
                 </span>
               </div>
             ))}
-            <div style={{ fontSize: 9, color: 'var(--muted)', fontFamily: 'Space Mono, monospace', marginTop: 8, lineHeight: 1.6 }}>
+            <div style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'Space Mono, monospace', marginTop: 8, lineHeight: 1.6 }}>
               Only bet when model probability beats the book's implied probability — compare "fair" odds vs the listed price.
               Parlay risk stacks: 2-3 legs preferred over 4.
             </div>
           </>
         ) : (
-          <div style={{ fontSize: 10, color: 'var(--dim)', fontFamily: 'Space Mono, monospace' }}>
+          <div style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'Space Mono, monospace' }}>
             No 2+ qualifying legs (score ≥ 7) yet — wait for confirmed lineups or skip this slate.
           </div>
         )}
@@ -1437,7 +1437,7 @@ function MlbLineupFieldTab({ gameData }) {
                 {player.isSP && (
                   <div style={{ position: 'absolute', top: -3, left: -10, padding: '1px 5px', borderRadius: 3,
                     background: 'var(--bg)', border: '1.5px solid rgba(0,255,136,0.6)', color: '#00ff88',
-                    fontFamily: 'Orbitron, monospace', fontSize: 8, fontWeight: 900, letterSpacing: '0.08em',
+                    fontFamily: 'Orbitron, monospace', fontSize: 9.5, fontWeight: 900, letterSpacing: '0.08em',
                     boxShadow: '0 2px 6px rgba(0,0,0,0.5)' }}>SP</div>
                 )}
               </div>
@@ -1448,7 +1448,7 @@ function MlbLineupFieldTab({ gameData }) {
                 <span style={{ fontSize: 10, fontFamily: 'Space Mono, monospace', color: 'var(--text)', fontWeight: 700, letterSpacing: '0.02em' }}>
                   {mlbLastName(player.name)}
                 </span>
-                <span style={{ fontSize: 8, fontFamily: 'Orbitron, monospace', color: accentRaw, marginLeft: 5, letterSpacing: '0.08em' }}>
+                <span style={{ fontSize: 9.5, fontFamily: 'Orbitron, monospace', color: accentRaw, marginLeft: 5, letterSpacing: '0.08em' }}>
                   {spot.pos}
                 </span>
               </div>
@@ -1457,9 +1457,9 @@ function MlbLineupFieldTab({ gameData }) {
             <>
               <div style={{ width: size, height: size, borderRadius: '50%', border: '1.5px dashed rgba(255,255,255,0.22)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(5,8,15,0.35)' }}>
-                <span style={{ fontSize: 9, fontFamily: 'Orbitron, monospace', color: 'var(--dim)', letterSpacing: '0.1em' }}>{spot.pos}</span>
+                <span style={{ fontSize: 10, fontFamily: 'Orbitron, monospace', color: 'var(--muted)', letterSpacing: '0.1em' }}>{spot.pos}</span>
               </div>
-              <span style={{ fontSize: 7.5, fontFamily: 'Space Mono, monospace', color: 'var(--dim)', letterSpacing: '0.1em' }}>—</span>
+              <span style={{ fontSize: 9.5, fontFamily: 'Space Mono, monospace', color: 'var(--muted)', letterSpacing: '0.1em' }}>—</span>
             </>
           )}
         </div>
@@ -1485,7 +1485,7 @@ function MlbLineupFieldTab({ gameData }) {
           ))}
         </div>
         {isLive && (
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 9, padding: '3px 9px', borderRadius: 2,
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 10, padding: '3px 9px', borderRadius: 2,
             fontFamily: 'Space Mono, monospace', letterSpacing: '0.12em', color: '#00ff88',
             background: 'rgba(0,255,136,0.1)', border: '1px solid rgba(0,255,136,0.4)' }}>
             <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#00ff88',
@@ -1493,25 +1493,25 @@ function MlbLineupFieldTab({ gameData }) {
             ON THE FIELD NOW
           </span>
         )}
-        <span style={{ fontSize: 9, padding: '3px 9px', borderRadius: 2, fontFamily: 'Space Mono, monospace', letterSpacing: '0.1em',
+        <span style={{ fontSize: 10, padding: '3px 9px', borderRadius: 2, fontFamily: 'Space Mono, monospace', letterSpacing: '0.1em',
           color: posted ? '#00ff88' : '#ffd060',
           background: posted ? 'rgba(0,255,136,0.1)' : 'rgba(255,208,96,0.1)',
           border: `1px solid ${posted ? 'rgba(0,255,136,0.35)' : 'rgba(255,208,96,0.35)'}` }}>
           {posted ? '✓ LINEUP CONFIRMED' : '◐ LINEUP NOT POSTED'}
         </span>
         {gameInfo.venue && (
-          <span style={{ fontSize: 9, color: 'var(--dim)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.06em' }}>
+          <span style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.06em' }}>
             {gameInfo.venue}
           </span>
         )}
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 4, alignItems: 'center' }}>
-          <span style={{ fontSize: 8.5, color: 'var(--dim)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.14em' }}>CAMERA</span>
+          <span style={{ fontSize: 9.5, color: 'var(--muted)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.14em' }}>CAMERA</span>
           {MLB_TILT_PRESETS.map(([l, deg]) => (
             <button key={l} onClick={() => setTilt(deg)}
               style={{ padding: '4px 9px', background: tilt === deg ? 'rgba(0,212,255,0.1)' : 'transparent',
                 border: `1px solid ${tilt === deg ? 'rgba(0,212,255,0.35)' : 'rgba(255,255,255,0.07)'}`,
-                color: tilt === deg ? 'var(--cyan)' : 'var(--dim)', fontFamily: 'Space Mono, monospace',
-                fontSize: 8.5, cursor: 'pointer', borderRadius: 2, letterSpacing: '0.08em' }}>{l}</button>
+                color: tilt === deg ? 'var(--cyan)' : 'var(--muted)', fontFamily: 'Space Mono, monospace',
+                fontSize: 9.5, cursor: 'pointer', borderRadius: 2, letterSpacing: '0.08em' }}>{l}</button>
           ))}
         </div>
       </div>
@@ -1605,13 +1605,13 @@ function MlbLineupFieldTab({ gameData }) {
           <HudCard style={{ padding: '12px 16px', marginBottom: 16 }} accent={accent}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
               <span style={{ fontSize: 13, fontFamily: 'Space Mono, monospace', color: 'var(--text)', fontWeight: 700 }}>{selected.name}</span>
-              <span style={{ fontSize: 9, padding: '2px 7px', border: `1px solid ${accentRaw}66`, color: accent, fontFamily: 'Space Mono, monospace', borderRadius: 2 }}>
+              <span style={{ fontSize: 10, padding: '2px 7px', border: `1px solid ${accentRaw}66`, color: accent, fontFamily: 'Space Mono, monospace', borderRadius: 2 }}>
                 {selected.position}{selected.order ? ` · BATS ${selected.order}` : ''}
               </span>
               {pm ? (
                 <span style={{ marginLeft: 'auto', display: 'flex', gap: 14, flexWrap: 'wrap' }}>
                   {[['HIT 0.5+', pm.predictions?.hits?.['0.5']], ['RBI 0.5+', pm.predictions?.rbi?.['0.5']], ['K 0.5+', pm.predictions?.k?.['0.5']]].map(([l, v]) => (
-                    <span key={l} style={{ fontSize: 9, fontFamily: 'Space Mono, monospace', color: 'var(--dim)', letterSpacing: '0.08em' }}>
+                    <span key={l} style={{ fontSize: 10, fontFamily: 'Space Mono, monospace', color: 'var(--muted)', letterSpacing: '0.08em' }}>
                       {l} <span style={{ fontFamily: 'Orbitron, monospace', fontSize: 13, fontWeight: 700, color: mlbPropColor(v) }}>
                         {v != null ? `${Math.round(v * 100)}%` : '—'}
                       </span>
@@ -1619,7 +1619,7 @@ function MlbLineupFieldTab({ gameData }) {
                   ))}
                 </span>
               ) : (
-                <span style={{ marginLeft: 'auto', fontSize: 9, color: 'var(--dim)', fontFamily: 'Space Mono, monospace' }}>
+                <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--muted)', fontFamily: 'Space Mono, monospace' }}>
                   no projection {selected.isSP ? '(pitcher)' : 'yet'}
                 </span>
               )}
@@ -1631,7 +1631,7 @@ function MlbLineupFieldTab({ gameData }) {
       {/* Batting order — the spatial view doesn't convey sequence, so keep it */}
       {posted && (
         <>
-          <div style={{ fontSize: 9, color: 'var(--dim)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.18em', marginBottom: 8 }}>
+          <div style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.18em', marginBottom: 8 }}>
             BATTING ORDER
           </div>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 16 }}>
@@ -1644,7 +1644,7 @@ function MlbLineupFieldTab({ gameData }) {
                     border: `1px solid ${isSel ? accentRaw + '77' : 'rgba(255,255,255,0.06)'}` }}>
                   <span style={{ fontFamily: 'Orbitron, monospace', fontSize: 11, fontWeight: 900, color: accent }}>{b.order}</span>
                   <span style={{ fontFamily: 'Space Mono, monospace', fontSize: 10, color: 'var(--text)' }}>{mlbLastName(b.name)}</span>
-                  <span style={{ fontFamily: 'Space Mono, monospace', fontSize: 8.5, color: 'var(--dim)' }}>{b.position}</span>
+                  <span style={{ fontFamily: 'Space Mono, monospace', fontSize: 9.5, color: 'var(--muted)' }}>{b.position}</span>
                 </button>
               );
             })}
@@ -1655,7 +1655,7 @@ function MlbLineupFieldTab({ gameData }) {
       {/* Non-fielders */}
       {dugout.length > 0 && (
         <>
-          <div style={{ fontSize: 9, color: 'var(--dim)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.18em', marginBottom: 8 }}>
+          <div style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.18em', marginBottom: 8 }}>
             DUGOUT · BATS BUT DOESN'T FIELD
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -1667,7 +1667,7 @@ function MlbLineupFieldTab({ gameData }) {
                     onError={e => { e.target.style.display = 'none'; }} />
                 </div>
                 <span style={{ fontSize: 10, fontFamily: 'Space Mono, monospace', color: 'var(--text)', fontWeight: 700 }}>{b.name}</span>
-                <span style={{ fontSize: 9, padding: '1px 6px', border: `1px solid ${accentRaw}44`, color: accent, fontFamily: 'Space Mono, monospace', borderRadius: 2 }}>
+                <span style={{ fontSize: 10, padding: '1px 6px', border: `1px solid ${accentRaw}44`, color: accent, fontFamily: 'Space Mono, monospace', borderRadius: 2 }}>
                   {b.position}{b.order ? ` · ${b.order}` : ''}
                 </span>
               </div>

@@ -11,8 +11,8 @@ const NBA_STATS = [
 
 const nbaStatColorFor = (v, sk) => {
   if (sk === 'pts') return v >= 30 ? 'var(--green)' : v >= 20 ? 'var(--gold)' : v >= 10 ? 'var(--cyan)' : 'var(--orange)';
-  if (sk === 'reb') return v >= 12 ? 'var(--green)' : v >= 8 ? 'var(--gold)' : v >= 4 ? 'var(--cyan)' : 'var(--dim)';
-  if (sk === 'ast') return v >= 10 ? 'var(--green)' : v >= 6 ? 'var(--gold)' : v >= 3 ? 'var(--cyan)' : 'var(--dim)';
+  if (sk === 'reb') return v >= 12 ? 'var(--green)' : v >= 8 ? 'var(--gold)' : v >= 4 ? 'var(--cyan)' : 'var(--muted)';
+  if (sk === 'ast') return v >= 10 ? 'var(--green)' : v >= 6 ? 'var(--gold)' : v >= 3 ? 'var(--cyan)' : 'var(--muted)';
   return 'var(--muted)';
 };
 
@@ -51,25 +51,25 @@ function NbaEdgeFinderTab({ gameData }) {
     const { p, r } = entry;
     const c = nbaProbColor(r.prob);
     const pct = Math.round(r.prob * 100);
-    const confColor = r.conf === 'HIGH' ? '#00ff88' : r.conf === 'MED' ? '#ffd060' : 'var(--dim)';
+    const confColor = r.conf === 'HIGH' ? '#00ff88' : r.conf === 'MED' ? '#ffd060' : 'var(--muted)';
     return (
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '9px 10px', borderRadius: 3,
         background: idx % 2 ? 'transparent' : 'rgba(255,255,255,0.02)', flexWrap: 'wrap' }}>
         <span style={{ width: 20, textAlign: 'center', fontSize: 14, fontFamily: 'Orbitron, monospace', fontWeight: 900,
-          color: idx === 0 ? '#00ff88' : idx <= 2 ? 'var(--cyan)' : 'var(--dim)' }}>{idx + 1}</span>
+          color: idx === 0 ? '#00ff88' : idx <= 2 ? 'var(--cyan)' : 'var(--muted)' }}>{idx + 1}</span>
         <img src={p.headshot} alt={p.name} style={{ width: 30, height: 30, borderRadius: '50%', objectFit: 'cover', border: `1px solid ${p.teamColor}55` }}
           onError={e => e.target.style.display = 'none'} />
         <div style={{ flex: 1, minWidth: 150 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 13, fontFamily: 'Space Mono, monospace', color: 'var(--text)', fontWeight: 700 }}>{p.name}</span>
-            <span style={{ fontSize: 8, padding: '1px 6px', border: `1px solid ${p.teamColor}66`, color: p.teamColor, fontFamily: 'Space Mono, monospace', borderRadius: 2, letterSpacing: '0.08em' }}>{p.teamAbbr} {p.pos}</span>
-            {p.isStarter && <span style={{ fontSize: 8, color: 'var(--green)', fontFamily: 'Orbitron, monospace', fontWeight: 700, letterSpacing: '0.12em' }}>★</span>}
+            <span style={{ fontSize: 9.5, padding: '1px 6px', border: `1px solid ${p.teamColor}66`, color: p.teamColor, fontFamily: 'Space Mono, monospace', borderRadius: 2, letterSpacing: '0.08em' }}>{p.teamAbbr} {p.pos}</span>
+            {p.isStarter && <span style={{ fontSize: 9.5, color: 'var(--green)', fontFamily: 'Orbitron, monospace', fontWeight: 700, letterSpacing: '0.12em' }}>★</span>}
           </div>
-          <div style={{ fontSize: 9, color: 'var(--muted)', fontFamily: 'Space Mono, monospace', marginTop: 2 }}>
+          <div style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'Space Mono, monospace', marginTop: 2 }}>
             proj <span style={{ color: 'var(--text)', fontWeight: 700 }}>{r.proj.toFixed(1)}</span>
             {' · '}{r.hasMatchup && r.defRank != null
               ? <span style={{ color: nbaDefenseRankColor(r.defRank) === 'red' ? '#ff8a55' : nbaDefenseRankColor(r.defRank) === 'green' ? '#5ff5a5' : '#ffd060' }}>vs #{r.defRank}/{r.total} D</span>
-              : <span style={{ color: 'var(--dim)' }}>no matchup adj</span>}
+              : <span style={{ color: 'var(--muted)' }}>no matchup adj</span>}
             {' · '}<span style={{ color: confColor }}>{r.conf}</span>
           </div>
         </div>
@@ -97,11 +97,11 @@ function NbaEdgeFinderTab({ gameData }) {
           <div style={{ flex: 1, minWidth: 180 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
               <span style={{ fontSize: 15, fontFamily: 'Space Mono, monospace', color: 'var(--text)', fontWeight: 700 }}>{p.name}</span>
-              <span style={{ fontSize: 9, padding: '2px 7px', border: `1px solid ${p.teamColor}66`, color: p.teamColor, fontFamily: 'Space Mono, monospace', borderRadius: 2, letterSpacing: '0.08em' }}>{p.teamAbbr}</span>
-              <span style={{ fontSize: 9, padding: '2px 7px', border: `1px solid ${p.teamColor}44`, color: p.teamColor, fontFamily: 'Space Mono, monospace', borderRadius: 2 }}>{p.pos}</span>
-              {p.jersey && p.jersey !== '—' && <span style={{ fontSize: 9, color: 'var(--dim)', fontFamily: 'Space Mono, monospace' }}>#{p.jersey}</span>}
+              <span style={{ fontSize: 10, padding: '2px 7px', border: `1px solid ${p.teamColor}66`, color: p.teamColor, fontFamily: 'Space Mono, monospace', borderRadius: 2, letterSpacing: '0.08em' }}>{p.teamAbbr}</span>
+              <span style={{ fontSize: 10, padding: '2px 7px', border: `1px solid ${p.teamColor}44`, color: p.teamColor, fontFamily: 'Space Mono, monospace', borderRadius: 2 }}>{p.pos}</span>
+              {p.jersey && p.jersey !== '—' && <span style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'Space Mono, monospace' }}>#{p.jersey}</span>}
               {p.isStarter && (
-                <span style={{ fontSize: 9, padding: '2px 7px', background: 'rgba(0,255,136,0.12)', border: '1px solid rgba(0,255,136,0.35)', color: 'var(--green)', fontFamily: 'Orbitron, monospace', fontWeight: 700, borderRadius: 2, letterSpacing: '0.15em' }}>★ STARTER</span>
+                <span style={{ fontSize: 10, padding: '2px 7px', background: 'rgba(0,255,136,0.12)', border: '1px solid rgba(0,255,136,0.35)', color: 'var(--green)', fontFamily: 'Orbitron, monospace', fontWeight: 700, borderRadius: 2, letterSpacing: '0.15em' }}>★ STARTER</span>
               )}
               <HotBadge tier={p.hotTier} />
             </div>
@@ -112,13 +112,13 @@ function NbaEdgeFinderTab({ gameData }) {
           <div style={{ display: 'flex', gap: 14 }}>
             {[['PTS', p.avgPts], ['REB', p.avgReb], ['AST', p.avgAst]].map(([l, v]) => (
               <div key={l} style={{ textAlign: 'center' }}>
-                <div style={{ fontSize: 8, color: 'var(--dim)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.16em', marginBottom: 2 }}>{l}</div>
+                <div style={{ fontSize: 9.5, color: 'var(--muted)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.16em', marginBottom: 2 }}>{l}</div>
                 <div style={{ fontSize: 18, fontFamily: 'Orbitron, monospace', fontWeight: 700, color: p.teamColor }}>{v.toFixed(1)}</div>
               </div>
             ))}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingLeft: 10, borderLeft: '1px solid rgba(255,255,255,0.06)' }}>
-            <span style={{ fontSize: 9, color: 'var(--dim)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.15em' }}>
+            <span style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.15em' }}>
               {open ? 'HIDE' : 'EXPAND'}
             </span>
             <span style={{ fontSize: 14, color: p.teamColor, fontFamily: 'Orbitron, monospace', transition: 'transform 0.2s',
@@ -130,30 +130,30 @@ function NbaEdgeFinderTab({ gameData }) {
           <div style={{ marginTop: 18, animation: 'fadeUp 0.25s ease' }}>
             <div style={{ paddingTop: 14, borderTop: '1px solid rgba(255,255,255,0.05)' }}>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
-                <span style={{ fontSize: 9, fontFamily: 'Space Mono, monospace', color: p.teamColor, letterSpacing: '0.22em' }}>
+                <span style={{ fontSize: 10, fontFamily: 'Space Mono, monospace', color: p.teamColor, letterSpacing: '0.22em' }}>
                   HEAD-TO-HEAD vs {p.oppAbbr}
                 </span>
-                <span style={{ fontSize: 9, color: 'var(--dim)', fontFamily: 'Space Mono, monospace' }}>
+                <span style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'Space Mono, monospace' }}>
                   {hasH2H ? `${p.h2h.length}G · last: ${p.h2h[0].date}` : 'NO GAMES'}
                 </span>
               </div>
               {hasH2H ? (
                 <GameLogChart games={p.h2h} stats={NBA_STATS} defaultStat="pts" emptyLabel={`NO GAMES VS ${p.oppAbbr} THIS SEASON`} accent={p.teamColor} colorFor={nbaStatColorFor} />
               ) : (
-                <div style={{ fontSize: 10, color: 'var(--dim)', fontFamily: 'Space Mono, monospace', padding: '16px 0', letterSpacing: '0.1em' }}>
+                <div style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'Space Mono, monospace', padding: '16px 0', letterSpacing: '0.1em' }}>
                   NO GAMES VS {p.oppAbbr} THIS SEASON
                 </div>
               )}
             </div>
 
             <div style={{ paddingTop: 18, marginTop: 18, borderTop: '1px solid rgba(255,255,255,0.05)' }}>
-              <div style={{ fontSize: 9, fontFamily: 'Space Mono, monospace', color: p.teamColor, letterSpacing: '0.22em', marginBottom: 10 }}>
+              <div style={{ fontSize: 10, fontFamily: 'Space Mono, monospace', color: p.teamColor, letterSpacing: '0.22em', marginBottom: 10 }}>
                 LAST 5 GAMES (SEASON)
               </div>
               {hasL5 ? (
                 <GameLogChart games={p.l5} stats={NBA_STATS} defaultStat="pts" emptyLabel="NO RECENT GAMES" accent={p.teamColor} colorFor={nbaStatColorFor} />
               ) : (
-                <div style={{ fontSize: 10, color: 'var(--dim)', fontFamily: 'Space Mono, monospace', padding: '16px 0', letterSpacing: '0.1em' }}>
+                <div style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'Space Mono, monospace', padding: '16px 0', letterSpacing: '0.1em' }}>
                   NO RECENT GAMES
                 </div>
               )}
@@ -175,7 +175,7 @@ function NbaEdgeFinderTab({ gameData }) {
             <button key={v} onClick={() => setFilter(v)}
               style={{ padding: '4px 12px', background: filter === v ? 'rgba(0,212,255,0.1)' : 'transparent',
                 border: `1px solid ${filter === v ? 'rgba(0,212,255,0.3)' : 'rgba(255,255,255,0.06)'}`,
-                color: filter === v ? 'var(--cyan)' : 'var(--dim)', fontFamily: 'Space Mono, monospace',
+                color: filter === v ? 'var(--cyan)' : 'var(--muted)', fontFamily: 'Space Mono, monospace',
                 fontSize: 10, cursor: 'pointer', borderRadius: 2, letterSpacing: '0.08em' }}>{l}</button>
           ))}
         </div>
@@ -187,11 +187,11 @@ function NbaEdgeFinderTab({ gameData }) {
           <span style={{ fontSize: 12, fontFamily: 'Orbitron, monospace', fontWeight: 900, color: '#00ff88', letterSpacing: '0.14em' }}>
             ◆ PROJECTION MODEL
           </span>
-          <span style={{ fontSize: 9, fontFamily: 'Space Mono, monospace', color: 'var(--muted)', letterSpacing: '0.1em' }}>
+          <span style={{ fontSize: 10, fontFamily: 'Space Mono, monospace', color: 'var(--muted)', letterSpacing: '0.1em' }}>
             LIKELIHOOD TO HIT THRESHOLD · ranked
           </span>
           {!nbaDefenseEdge && (
-            <span style={{ marginLeft: 'auto', fontSize: 9, fontFamily: 'Space Mono, monospace', color: 'var(--dim)' }}>
+            <span style={{ marginLeft: 'auto', fontSize: 10, fontFamily: 'Space Mono, monospace', color: 'var(--muted)' }}>
               matchup adj loading…
             </span>
           )}
@@ -214,7 +214,7 @@ function NbaEdgeFinderTab({ gameData }) {
               <button key={line} onClick={() => setModelLine(line)}
                 style={{ padding: '5px 12px', background: modelLine === line ? 'rgba(0,212,255,0.12)' : 'transparent',
                   border: `1px solid ${modelLine === line ? 'rgba(0,212,255,0.4)' : 'rgba(255,255,255,0.08)'}`,
-                  color: modelLine === line ? 'var(--cyan)' : 'var(--dim)', fontFamily: 'Space Mono, monospace',
+                  color: modelLine === line ? 'var(--cyan)' : 'var(--muted)', fontFamily: 'Space Mono, monospace',
                   fontSize: 10, cursor: 'pointer', borderRadius: 2, letterSpacing: '0.06em' }}>{line}+</button>
             ))}
           </div>
@@ -229,12 +229,12 @@ function NbaEdgeFinderTab({ gameData }) {
             {modelBoard.slice(0, 10).map((entry, i) => <ModelRow key={entry.p.id || i} entry={entry} idx={i} />)}
           </div>
         ) : (
-          <div style={{ fontSize: 10, color: 'var(--dim)', fontFamily: 'Space Mono, monospace', padding: '12px 0' }}>
+          <div style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'Space Mono, monospace', padding: '12px 0' }}>
             No players with game-log data yet.
           </div>
         )}
 
-        <div style={{ fontSize: 9, color: 'var(--muted)', fontFamily: 'Space Mono, monospace', marginTop: 12, lineHeight: 1.6, letterSpacing: '0.04em' }}>
+        <div style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'Space Mono, monospace', marginTop: 12, lineHeight: 1.6, letterSpacing: '0.04em' }}>
           Normal model fit to each player's game log, mean shifted by last-5 form and opponent defense-vs-position rank.
           Confidence reflects sample size + role stability. Estimates only — not a betting guarantee.
         </div>
@@ -290,7 +290,7 @@ function NbaDefenseLegend() {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 12px', marginBottom: 12,
       background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 4, flexWrap: 'wrap' }}>
-      <span style={{ fontSize: 9, fontFamily: 'Orbitron, monospace', color: 'var(--dim)', letterSpacing: '0.18em' }}>
+      <span style={{ fontSize: 10, fontFamily: 'Orbitron, monospace', color: 'var(--muted)', letterSpacing: '0.18em' }}>
         DEFENSE VS POSITION
       </span>
       {items.map(it => {
@@ -298,7 +298,7 @@ function NbaDefenseLegend() {
         return (
           <div key={it.tier} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
             <span style={{ width: 8, height: 8, borderRadius: 2, background: c.bg, border: `1px solid ${c.border}` }} />
-            <span style={{ fontSize: 9, fontFamily: 'Space Mono, monospace', color: c.text, letterSpacing: '0.05em' }}>
+            <span style={{ fontSize: 10, fontFamily: 'Space Mono, monospace', color: c.text, letterSpacing: '0.05em' }}>
               {it.label}
             </span>
           </div>
@@ -311,7 +311,7 @@ function NbaDefenseLegend() {
 function NbaDefenseChip({ edge, align }) {
   if (!edge || edge.rank == null || edge.points_allowed_per_48 == null) {
     return (
-      <div style={{ fontSize: 9, fontFamily: 'Space Mono, monospace', color: 'var(--dim)', letterSpacing: '0.08em', textAlign: align }}>
+      <div style={{ fontSize: 10, fontFamily: 'Space Mono, monospace', color: 'var(--muted)', letterSpacing: '0.08em', textAlign: align }}>
         NO DEFENSE DATA
       </div>
     );
@@ -322,11 +322,11 @@ function NbaDefenseChip({ edge, align }) {
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: align === 'right' ? 'flex-end' : 'flex-start', gap: 3 }}>
       <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '3px 8px',
         background: c.bg, border: `1px solid ${c.border}`, borderRadius: 2 }}>
-        <span style={{ fontSize: 9, fontFamily: 'Orbitron, monospace', fontWeight: 700, color: c.text, letterSpacing: '0.15em' }}>
+        <span style={{ fontSize: 10, fontFamily: 'Orbitron, monospace', fontWeight: 700, color: c.text, letterSpacing: '0.15em' }}>
           vs {edge.opponent} {edge.position} · #{edge.rank}/150
         </span>
       </div>
-      <div style={{ fontSize: 9, fontFamily: 'Space Mono, monospace', color: c.text, letterSpacing: '0.08em' }}>
+      <div style={{ fontSize: 10, fontFamily: 'Space Mono, monospace', color: c.text, letterSpacing: '0.08em' }}>
         {edge.points_allowed_per_48.toFixed(1)} pts/48 allowed · {c.label}
       </div>
     </div>
@@ -336,7 +336,7 @@ function NbaDefenseChip({ edge, align }) {
 function NbaPlayerColumn({ player, accent, align, defenseEdge, showDefense = true }) {
   if (!player) {
     return (
-      <div style={{ flex: 1, padding: 12, opacity: 0.4, textAlign: align, fontFamily: 'Space Mono, monospace', fontSize: 10, color: 'var(--dim)', letterSpacing: '0.1em' }}>
+      <div style={{ flex: 1, padding: 12, opacity: 0.4, textAlign: align, fontFamily: 'Space Mono, monospace', fontSize: 10, color: 'var(--muted)', letterSpacing: '0.1em' }}>
         NO STARTER
       </div>
     );
@@ -347,7 +347,7 @@ function NbaPlayerColumn({ player, accent, align, defenseEdge, showDefense = tru
         <PlayerCard player={{ name: player.name, headshot: player.headshot, pos: player.pos }} size="sm" accent={accent} />
         <div style={{ textAlign: align }}>
           <div style={{ fontSize: 13, fontFamily: 'Space Mono, monospace', color: 'var(--text)', fontWeight: 700 }}>{player.name}</div>
-          <div style={{ fontSize: 9, color: 'var(--muted)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.08em' }}>
+          <div style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.08em' }}>
             {player.pos}{player.jersey && player.jersey !== '—' ? ` · #${player.jersey}` : ''}
           </div>
         </div>
@@ -359,8 +359,8 @@ function NbaPlayerColumn({ player, accent, align, defenseEdge, showDefense = tru
 
 function NbaStatRow({ label, awayVal, homeVal, fmt, lowerIsBetter, awayColor, homeColor }) {
   const winner = _nbaPickEdge(awayVal, homeVal, lowerIsBetter);
-  const colA = winner === 'away' ? awayColor : winner === 'home' ? 'var(--dim)' : 'var(--muted)';
-  const colH = winner === 'home' ? homeColor : winner === 'away' ? 'var(--dim)' : 'var(--muted)';
+  const colA = winner === 'away' ? awayColor : winner === 'home' ? 'var(--muted)' : 'var(--muted)';
+  const colH = winner === 'home' ? homeColor : winner === 'away' ? 'var(--muted)' : 'var(--muted)';
   // Bar widths normalized: bigger value gets full bar, smaller is proportional.
   const max = Math.max(awayVal || 0, homeVal || 0, 0.001);
   const wA = ((awayVal || 0) / max) * 100;
@@ -375,7 +375,7 @@ function NbaStatRow({ label, awayVal, homeVal, fmt, lowerIsBetter, awayColor, ho
           {awayVal == null ? '—' : fmt(awayVal)}
         </span>
       </div>
-      <div style={{ textAlign: 'center', fontSize: 9, fontFamily: 'Space Mono, monospace', color: 'var(--dim)', letterSpacing: '0.18em' }}>{label}</div>
+      <div style={{ textAlign: 'center', fontSize: 10, fontFamily: 'Space Mono, monospace', color: 'var(--muted)', letterSpacing: '0.18em' }}>{label}</div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <span style={{ fontSize: 13, fontFamily: 'Space Mono, monospace', fontWeight: 700, color: colH, minWidth: 56 }}>
           {homeVal == null ? '—' : fmt(homeVal)}
@@ -408,7 +408,7 @@ function NbaMatchupRow({ matchup, awayAbbr, homeAbbr, awayColor, homeColor, defe
           <span style={{ fontSize: 11, fontFamily: 'Orbitron, monospace', fontWeight: 700, color: 'var(--cyan)', letterSpacing: '0.18em', padding: '4px 10px', border: '1px solid rgba(0,212,255,0.3)', borderRadius: 2 }}>
             {matchup.position}
           </span>
-          <span style={{ fontSize: 9, color: 'var(--dim)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.15em' }}>
+          <span style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.15em' }}>
             POSITION MATCHUP
           </span>
         </div>
@@ -417,28 +417,28 @@ function NbaMatchupRow({ matchup, awayAbbr, homeAbbr, awayColor, homeColor, defe
             <button key={v} onClick={() => setMode(v)}
               style={{ padding: '3px 10px', background: mode === v ? 'rgba(0,212,255,0.1)' : 'transparent',
                 border: `1px solid ${mode === v ? 'rgba(0,212,255,0.3)' : 'rgba(255,255,255,0.06)'}`,
-                color: mode === v ? 'var(--cyan)' : 'var(--dim)', fontFamily: 'Space Mono, monospace',
-                fontSize: 9, cursor: 'pointer', borderRadius: 2, letterSpacing: '0.1em' }}>{l}</button>
+                color: mode === v ? 'var(--cyan)' : 'var(--muted)', fontFamily: 'Space Mono, monospace',
+                fontSize: 10, cursor: 'pointer', borderRadius: 2, letterSpacing: '0.1em' }}>{l}</button>
           ))}
         </div>
       </div>
 
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, marginBottom: 12 }}>
         <NbaPlayerColumn player={a} accent={awayColor} align="left" defenseEdge={awayDefense} showDefense={showDefense} />
-        <div style={{ fontFamily: 'Orbitron, monospace', fontSize: 11, color: 'var(--dim)', letterSpacing: '0.15em', paddingTop: 14 }}>VS</div>
+        <div style={{ fontFamily: 'Orbitron, monospace', fontSize: 11, color: 'var(--muted)', letterSpacing: '0.15em', paddingTop: 14 }}>VS</div>
         <NbaPlayerColumn player={h} accent={homeColor} align="right" defenseEdge={homeDefense} showDefense={showDefense} />
       </div>
 
-      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9, fontFamily: 'Space Mono, monospace', color: 'var(--muted)', letterSpacing: '0.1em', marginBottom: 8, padding: '6px 0', borderTop: '1px solid rgba(255,255,255,0.05)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, fontFamily: 'Space Mono, monospace', color: 'var(--muted)', letterSpacing: '0.1em', marginBottom: 8, padding: '6px 0', borderTop: '1px solid rgba(255,255,255,0.05)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
         <span>{awayAbbr} · {aGames || 0} GAMES{mode === 'h2h' ? ` VS ${homeAbbr}` : ''}</span>
-        <span style={{ color: 'var(--dim)' }}>
+        <span style={{ color: 'var(--muted)' }}>
           {mode === 'season' ? 'SEASON AVERAGES' : mode === 'l5' ? 'LAST 5 AVERAGES' : `HEAD-TO-HEAD AVERAGES`}
         </span>
         <span>{homeAbbr} · {hGames || 0} GAMES{mode === 'h2h' ? ` VS ${awayAbbr}` : ''}</span>
       </div>
 
       {(!aStats || !aStats.games) && (!hStats || !hStats.games) ? (
-        <div style={{ textAlign: 'center', padding: '20px 0', fontSize: 10, color: 'var(--dim)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.1em' }}>
+        <div style={{ textAlign: 'center', padding: '20px 0', fontSize: 10, color: 'var(--muted)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.1em' }}>
           {mode === 'h2h' ? 'NO HEAD-TO-HEAD GAMES THIS SEASON' : 'NO GAMES PLAYED'}
         </div>
       ) : (
@@ -503,11 +503,11 @@ function NbaInjuryCard({ injury, accent }) {
               {injury.name}
             </span>
             {injury.pos && (
-              <span style={{ fontSize: 9, color: 'var(--dim)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.08em' }}>
+              <span style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.08em' }}>
                 {injury.pos}
               </span>
             )}
-            <span style={{ fontSize: 9, fontFamily: 'Orbitron, monospace', fontWeight: 700, color, letterSpacing: '0.18em',
+            <span style={{ fontSize: 10, fontFamily: 'Orbitron, monospace', fontWeight: 700, color, letterSpacing: '0.18em',
               padding: '3px 8px', border: `1px solid ${color}55`, background: `${color}14`, borderRadius: 2 }}>
               {norm}
             </span>
@@ -527,14 +527,14 @@ function NbaInjuryCard({ injury, accent }) {
 
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
             {injury.returnDate && (
-              <div style={{ fontSize: 9, fontFamily: 'Space Mono, monospace', color: 'var(--dim)', letterSpacing: '0.08em' }}>
-                <span style={{ color: 'var(--dim)' }}>EST. RETURN ·</span>{' '}
+              <div style={{ fontSize: 10, fontFamily: 'Space Mono, monospace', color: 'var(--muted)', letterSpacing: '0.08em' }}>
+                <span style={{ color: 'var(--muted)' }}>EST. RETURN ·</span>{' '}
                 <span style={{ color: 'var(--cyan)' }}>{injury.returnDate}</span>
               </div>
             )}
             {injury.reportedDate && (
-              <div style={{ fontSize: 9, fontFamily: 'Space Mono, monospace', color: 'var(--dim)', letterSpacing: '0.08em' }}>
-                <span style={{ color: 'var(--dim)' }}>REPORTED ·</span>{' '}
+              <div style={{ fontSize: 10, fontFamily: 'Space Mono, monospace', color: 'var(--muted)', letterSpacing: '0.08em' }}>
+                <span style={{ color: 'var(--muted)' }}>REPORTED ·</span>{' '}
                 <span style={{ color: 'var(--muted)' }}>{injury.reportedDate}</span>
               </div>
             )}
@@ -565,7 +565,7 @@ function NbaInjuryReport({ injuries, awayAbbr, homeAbbr, awayColor, homeColor })
     <div style={{ flex: 1, minWidth: 280 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
         <span style={{ fontSize: 11, fontFamily: 'Orbitron, monospace', fontWeight: 700, color, letterSpacing: '0.18em' }}>{abbr}</span>
-        <span style={{ fontSize: 9, color: 'var(--dim)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.1em' }}>
+        <span style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.1em' }}>
           {list.length} {list.length === 1 ? 'PLAYER' : 'PLAYERS'}
         </span>
       </div>
@@ -576,7 +576,7 @@ function NbaInjuryReport({ injuries, awayAbbr, homeAbbr, awayColor, homeColor })
           ))}
         </div>
       ) : (
-        <div style={{ fontSize: 10, color: 'var(--dim)', fontFamily: 'Space Mono, monospace', padding: '12px 0', letterSpacing: '0.1em' }}>
+        <div style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'Space Mono, monospace', padding: '12px 0', letterSpacing: '0.1em' }}>
           NO INJURIES REPORTED
         </div>
       )}
@@ -630,10 +630,10 @@ function NbaLineupStatusBanner({ data, awayAbbr, homeAbbr, awayColor, homeColor,
     <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px',
       background: 'rgba(0,212,255,0.04)', border: '1px solid rgba(0,212,255,0.12)',
       borderRadius: 4, marginBottom: 14, flexWrap: 'wrap' }}>
-      <span style={{ fontSize: 9, fontFamily: 'Orbitron, monospace', fontWeight: 700, color: 'var(--cyan)', letterSpacing: '0.18em' }}>
+      <span style={{ fontSize: 10, fontFamily: 'Orbitron, monospace', fontWeight: 700, color: 'var(--cyan)', letterSpacing: '0.18em' }}>
         SOURCE · {sourceLabel}
       </span>
-      <span style={{ fontSize: 9, fontFamily: 'Space Mono, monospace', color: 'var(--dim)', letterSpacing: '0.1em' }}>·</span>
+      <span style={{ fontSize: 10, fontFamily: 'Space Mono, monospace', color: 'var(--muted)', letterSpacing: '0.1em' }}>·</span>
       <span style={{ fontSize: 10, fontFamily: 'Space Mono, monospace', display: 'flex', alignItems: 'center', gap: 6 }}>
         <span style={{ color: awayColor, fontWeight: 700 }}>{awayAbbr}</span>
         <span style={{ color: _statusColor(awayStatus), letterSpacing: '0.1em', textTransform: 'uppercase' }}>{awayStatus}</span>
@@ -642,14 +642,14 @@ function NbaLineupStatusBanner({ data, awayAbbr, homeAbbr, awayColor, homeColor,
         <span style={{ color: homeColor, fontWeight: 700 }}>{homeAbbr}</span>
         <span style={{ color: _statusColor(homeStatus), letterSpacing: '0.1em', textTransform: 'uppercase' }}>{homeStatus}</span>
       </span>
-      <span style={{ fontSize: 9, fontFamily: 'Space Mono, monospace', color: 'var(--dim)', letterSpacing: '0.1em', marginLeft: 'auto' }}>
+      <span style={{ fontSize: 10, fontFamily: 'Space Mono, monospace', color: 'var(--muted)', letterSpacing: '0.1em', marginLeft: 'auto' }}>
         UPDATED · {_formatLineupTimestamp(data?.fetchedAt)}
       </span>
       <button onClick={onRefresh} disabled={refreshing}
         style={{ padding: '4px 12px', background: refreshing ? 'transparent' : 'rgba(0,212,255,0.08)',
           border: `1px solid ${refreshing ? 'rgba(255,255,255,0.06)' : 'rgba(0,212,255,0.25)'}`,
-          color: refreshing ? 'var(--dim)' : 'var(--cyan)', fontFamily: 'Space Mono, monospace',
-          fontSize: 9, cursor: refreshing ? 'default' : 'pointer', borderRadius: 2, letterSpacing: '0.12em' }}>
+          color: refreshing ? 'var(--muted)' : 'var(--cyan)', fontFamily: 'Space Mono, monospace',
+          fontSize: 10, cursor: refreshing ? 'default' : 'pointer', borderRadius: 2, letterSpacing: '0.12em' }}>
         {refreshing ? 'REFRESHING…' : '↻ REFRESH'}
       </button>
     </div>
@@ -779,7 +779,7 @@ function NbaDefenseStatCell({ value, rank, fmt }) {
       fontFamily: 'Space Mono, monospace',
     }}>
       <div style={{ fontSize: 12, fontWeight: 700, color: c ? c.text : 'var(--text)' }}>{display}</div>
-      <div style={{ fontSize: 9, color: 'var(--dim)', letterSpacing: '0.06em', marginTop: 2 }}>
+      <div style={{ fontSize: 10, color: 'var(--muted)', letterSpacing: '0.06em', marginTop: 2 }}>
         #{rank ?? '—'}
       </div>
     </td>
@@ -836,7 +836,7 @@ function NbaDefenseVsPositionTab({ gameData }) {
 
   const headerCellStyle = {
     padding: '8px 10px', textAlign: 'center', cursor: 'pointer',
-    fontFamily: 'Space Mono, monospace', fontSize: 9, letterSpacing: '0.18em',
+    fontFamily: 'Space Mono, monospace', fontSize: 10, letterSpacing: '0.18em',
     color: 'var(--cyan)', borderBottom: '1px solid rgba(0,212,255,0.18)',
     userSelect: 'none', whiteSpace: 'nowrap',
   };
@@ -856,13 +856,13 @@ function NbaDefenseVsPositionTab({ gameData }) {
             <button key={v} onClick={() => setScope(v)}
               style={{ padding: '4px 12px', background: scope === v ? 'rgba(0,212,255,0.1)' : 'transparent',
                 border: `1px solid ${scope === v ? 'rgba(0,212,255,0.3)' : 'rgba(255,255,255,0.06)'}`,
-                color: scope === v ? 'var(--cyan)' : 'var(--dim)', fontFamily: 'Space Mono, monospace',
+                color: scope === v ? 'var(--cyan)' : 'var(--muted)', fontFamily: 'Space Mono, monospace',
                 fontSize: 10, cursor: 'pointer', borderRadius: 2, letterSpacing: '0.1em' }}>
               {l}
             </button>
           ))}
         </div>
-        <span style={{ fontSize: 9, color: 'var(--dim)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.1em', marginLeft: 'auto' }}>
+        <span style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.1em', marginLeft: 'auto' }}>
           CLICK ANY HEADER TO SORT
         </span>
       </div>
@@ -910,7 +910,7 @@ function NbaDefenseVsPositionTab({ gameData }) {
         </table>
       </div>
 
-      <div style={{ fontSize: 9, color: 'var(--dim)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.08em', marginTop: 10 }}>
+      <div style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.08em', marginTop: 10 }}>
         EACH CELL: VALUE OVER LEAGUE RANK · #1/150 = STRONGEST DEFENSE FOR THAT STAT · {sorted.length} ROWS
       </div>
     </div>
