@@ -917,4 +917,486 @@ function NbaDefenseVsPositionTab({ gameData }) {
   );
 }
 
-Object.assign(window, { NbaEdgeFinderTab, NbaLineupTab, NbaDefenseVsPositionTab });
+/* ============================================================
+   WNBA LINEUP — COURT VIEW
+   Same idea as the MLB field tab: put every starter on the floor
+   at the spot she plays, so "who is on the court" is one glance
+   instead of a list to read. The floor is a CSS-perspective plane
+   (rotateX) — no WebGL — and each card is counter-rotated by the
+   same angle so names stay flat to the camera and crisp.
+
+   Both fives are on screen at once (away in the far half, home in
+   the near half) because this data arrives as POSITION MATCHUPS —
+   showing the pairing is the whole point, and it's the one thing
+   the MLB field can't do.
+   ============================================================ */
+
+// The court is drawn in a 100x100 viewBox: sidelines at x 8..92 (50 ft
+// across) and baselines at y 6..94 (94 ft long). Those two axes therefore
+// carry DIFFERENT units-per-foot — the length is deliberately squeezed so
+// that after the rotateX the floor reads like a broadcast baseline camera.
+// Consequence: every circle must be drawn as a pre-compensated ellipse
+// (rx from WCT_X, ry from WCT_Y). Same trick as the MLB diamond.
+const WCT = { x0: 8, x1: 92, y0: 6, y1: 94, cx: 50 };
+const WCT_X = (WCT.x1 - WCT.x0) / 50;   // viewBox units per foot, across
+const WCT_Y = (WCT.y1 - WCT.y0) / 94;   // viewBox units per foot, along
+const wctX = ft => WCT.cx + ft * WCT_X;             // feet from center line
+const wctY = (ft, end) => end === 'near'            // feet from that baseline
+  ? WCT.y1 - ft * WCT_Y
+  : WCT.y0 + ft * WCT_Y;
+
+// WNBA three-point line: a 22'1.75" arc off the rim with straight corner
+// segments, FIBA-style. The straights meet the arc 7.35 ft up the floor.
+const WCT_3PT_CORNER = 22.05, WCT_3PT_R = 22.15, WCT_3PT_BREAK = 7.35;
+
+// Half-court sets, given as (feet from the center line, feet from own
+// baseline) so the shape stays readable as basketball rather than as pixel
+// coordinates. `prefer` is the group fallback chain for that spot and `fill`
+// the order the spots get resolved in — interior first, because those are the
+// spots that read wrong if the wrong body ends up there.
+const WCT_SLOTS = [
+  { key: 'g1', group: 'G', label: 'POINT', ft: [0, 34],   prefer: ['G', 'F', 'C'], fill: 3 },
+  { key: 'g2', group: 'G', label: 'WING',  ft: [-21, 26], prefer: ['G', 'F', 'C'], fill: 4 },
+  { key: 'f1', group: 'F', label: 'WING',  ft: [21, 26],  prefer: ['F', 'G', 'C'], fill: 5 },
+  { key: 'f2', group: 'F', label: 'POST',  ft: [-10, 14], prefer: ['F', 'C', 'G'], fill: 2 },
+  { key: 'c1', group: 'C', label: 'RIM',   ft: [8, 7],    prefer: ['C', 'F', 'G'], fill: 1 },
+];
+
+// Away is point-reflected into the far half so the two fives face each other.
+function wctSpot(slot, side) {
+  const [fx, fy] = slot.ft;
+  const end = side === 'home' ? 'near' : 'far';
+  return { x: wctX(side === 'home' ? fx : -fx), y: wctY(fy, end) };
+}
+
+// Kept gentle on purpose: enough depth cue to sort near from far, not so
+// much that the away five becomes unreadable.
+const wctDepth = y => 0.86 + 0.24 * (y / 100);
+const wctLast = n => String(n || '').trim().split(/\s+/).slice(-1)[0] || '—';
+const wctGroup = p => {
+  const fromSlot = String(p?.slotLabel || '')[0]?.toUpperCase();
+  if (fromSlot === 'G' || fromSlot === 'F' || fromSlot === 'C') return fromSlot;
+  const p2 = String(p?.pos || '').toUpperCase();
+  if (p2.startsWith('C')) return 'C';
+  if (p2 === 'F' || p2 === 'SF' || p2 === 'PF' || p2 === 'FORWARD') return 'F';
+  return 'G';
+};
+
+// Resolve SLOTS against players rather than players against slots. WNBA
+// position data is coarse (G/F/C) and small-ball fives are common — Dallas
+// starts three guards and no center — so filling the rim spot with "whoever
+// is left over" strands a guard under the basket. Walking the spots in `fill`
+// order and letting each take the best body available instead puts the two
+// biggest players inside and the extra guard out on the wing, which is what
+// the lineup actually looks like. Within a preference tier the most-played
+// player wins, so the primary ball-handler gets POINT.
+function wctAssignSlots(players) {
+  const pool = players.slice().sort((a, b) => (b.season?.min || 0) - (a.season?.min || 0));
+  const taken = new Set();
+  const chosen = {};
+  for (const slot of WCT_SLOTS.slice().sort((a, b) => a.fill - b.fill)) {
+    let pick = null;
+    for (const group of slot.prefer) {
+      pick = pool.find(p => !taken.has(p) && wctGroup(p) === group);
+      if (pick) break;
+    }
+    if (pick) taken.add(pick);
+    chosen[slot.key] = pick || null;
+  }
+  return WCT_SLOTS.map(slot => ({ slot, player: chosen[slot.key] }));
+}
+
+const WCT_TILTS = [['BROADCAST', 56], ['ANGLED', 34], ['OVERHEAD', 6]];
+
+// One end of the floor: paint, free-throw circle, restricted arc, rim,
+// backboard and the three-point line. Mirrored for the far end.
+function WnbaCourtEnd({ end, accent }) {
+  const y = ft => wctY(ft, end);
+  const sweep = end === 'near' ? 1 : 0;      // which way each arc bulges inward
+  const line = 'rgba(233,242,252,0.30)';
+  const rimY = y(5.25);
+  return (
+    <g fill="none" stroke={line} strokeWidth="0.45">
+      {/* paint — 16 ft wide, 19 ft deep */}
+      <rect x={wctX(-8)} y={Math.min(y(0), y(19))} width={16 * WCT_X} height={19 * WCT_Y}
+        fill="rgba(0,0,0,0.16)" stroke={line} strokeWidth="0.45" />
+      <ellipse cx={WCT.cx} cy={y(19)} rx={6 * WCT_X} ry={6 * WCT_Y} />
+      {/* restricted area + rim + backboard */}
+      <path d={`M ${wctX(-4)},${rimY} A ${4 * WCT_X} ${4 * WCT_Y} 0 0 ${sweep} ${wctX(4)},${rimY}`} />
+      <ellipse cx={WCT.cx} cy={rimY} rx={0.75 * WCT_X} ry={0.75 * WCT_Y} stroke="#ff6b35" strokeWidth="0.6" />
+      <path d={`M ${wctX(-3)},${y(4)} L ${wctX(3)},${y(4)}`} stroke="rgba(233,242,252,0.5)" strokeWidth="0.7" />
+      {/* three-point line */}
+      <path d={`M ${wctX(-WCT_3PT_CORNER)},${y(0)}
+                L ${wctX(-WCT_3PT_CORNER)},${y(WCT_3PT_BREAK)}
+                A ${WCT_3PT_R * WCT_X} ${WCT_3PT_R * WCT_Y} 0 0 ${sweep} ${wctX(WCT_3PT_CORNER)},${y(WCT_3PT_BREAK)}
+                L ${wctX(WCT_3PT_CORNER)},${y(0)}`}
+        stroke={accent} strokeWidth="0.5" opacity="0.75" />
+    </g>
+  );
+}
+
+function WnbaCourtCard({ entry, side, accent, tilt, selId, onSelect, idx }) {
+  const { slot, player } = entry;
+  const spot = wctSpot(slot, side);
+  const isSel = player && String(player.id) === String(selId);
+  const dim = selId && !isSel;
+  const depth = wctDepth(spot.y);
+  const size = player ? 46 : 28;
+  return (
+    <div style={{ position: 'absolute', left: `${spot.x}%`, top: `${spot.y}%`, width: 0, height: 0,
+      transformStyle: 'preserve-3d', zIndex: isSel ? 40 : Math.round(spot.y) }}>
+      {/* contact shadow stays flat on the hardwood — this is what sells the depth */}
+      <div style={{ position: 'absolute', left: -24 * depth, top: -5, width: 48 * depth, height: 12 * depth,
+        borderRadius: '50%', background: 'rgba(0,0,0,0.5)', filter: 'blur(4px)', pointerEvents: 'none',
+        opacity: dim ? 0.3 : 1, transition: 'opacity 0.25s' }} />
+      <div
+        onClick={() => player && onSelect(isSel ? null : String(player.id))}
+        title={player ? `${player.name} · ${player.slotLabel || slot.group} · ${slot.label}` : `${slot.group} — not set`}
+        style={{
+          position: 'absolute', bottom: 0, left: 0,
+          transform: `translateX(-50%) rotateX(-${tilt}deg) scale(${depth * (isSel ? 1.16 : 1)})`,
+          transformOrigin: 'center bottom',
+          transition: 'transform 0.3s cubic-bezier(0.16,1,0.3,1), opacity 0.25s',
+          opacity: dim ? 0.4 : 1,
+          display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
+          cursor: player ? 'pointer' : 'default', userSelect: 'none',
+          animation: `fadeUp 0.45s ease ${idx * 55}ms backwards`,
+        }}>
+        {player ? (
+          <>
+            <div style={{ position: 'relative' }}>
+              {/* halo pool for separation against the floor */}
+              <div style={{ position: 'absolute', inset: -5, borderRadius: '50%',
+                background: `radial-gradient(circle, ${accent}33 0%, transparent 70%)`, pointerEvents: 'none' }} />
+              <div style={{ position: 'relative', width: size, height: size, borderRadius: '50%', overflow: 'hidden',
+                border: `2.5px solid ${isSel ? accent : accent + 'aa'}`,
+                background: 'linear-gradient(180deg, #16223a 0%, #0d1524 100%)',
+                boxShadow: isSel ? `0 0 22px ${accent}, 0 6px 14px rgba(0,0,0,0.6)` : `0 0 10px ${accent}55, 0 5px 12px rgba(0,0,0,0.55)` }}>
+                {player.headshot && (
+                  <img src={player.headshot} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                    onError={e => { e.target.style.display = 'none'; }} />
+                )}
+              </div>
+              {player.jersey && player.jersey !== '—' && (
+                <div style={{ position: 'absolute', top: -3, left: -7, minWidth: 18, height: 18, padding: '0 3px', borderRadius: 9,
+                  background: 'var(--bg)', border: `1.5px solid ${accent}`, color: accent,
+                  fontFamily: 'Orbitron, monospace', fontSize: 9.5, fontWeight: 900, lineHeight: '15px',
+                  textAlign: 'center', boxShadow: '0 2px 6px rgba(0,0,0,0.5)' }}>{player.jersey}</div>
+              )}
+            </div>
+            {/* name plate — the primary "who is that" signal */}
+            <div style={{ padding: '2px 7px', borderRadius: 3, background: 'rgba(5,8,15,0.94)',
+              border: `1px solid ${accent}66`, whiteSpace: 'nowrap', backdropFilter: 'blur(2px)',
+              boxShadow: '0 3px 8px rgba(0,0,0,0.45)' }}>
+              <span style={{ fontSize: 10, fontFamily: 'Space Mono, monospace', color: 'var(--text)', fontWeight: 700, letterSpacing: '0.02em' }}>
+                {wctLast(player.name)}
+              </span>
+              <span style={{ fontSize: 9.5, fontFamily: 'Orbitron, monospace', color: accent, marginLeft: 5, letterSpacing: '0.08em' }}>
+                {player.slotLabel || slot.group}
+              </span>
+            </div>
+          </>
+        ) : (
+          <>
+            <div style={{ width: size, height: size, borderRadius: '50%', border: '1.5px dashed rgba(255,255,255,0.22)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(5,8,15,0.35)' }}>
+              <span style={{ fontSize: 9.5, fontFamily: 'Orbitron, monospace', color: 'var(--muted)', letterSpacing: '0.1em' }}>{slot.group}</span>
+            </div>
+            <span style={{ fontSize: 9.5, fontFamily: 'Space Mono, monospace', color: 'var(--muted)', letterSpacing: '0.1em' }}>—</span>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Season / L5 / vs-opponent averages for the tapped player.
+function WnbaSplitRow({ label, agg, accent }) {
+  const cell = (v, digits = 1) => (v == null ? '—' : Number(v).toFixed(digits));
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+      <span style={{ width: 74, fontSize: 9.5, fontFamily: 'Space Mono, monospace', color: 'var(--muted)', letterSpacing: '0.12em' }}>
+        {label}
+      </span>
+      {[['MIN', agg?.min], ['PTS', agg?.pts], ['REB', agg?.reb], ['AST', agg?.ast]].map(([k, v]) => (
+        <span key={k} style={{ fontSize: 9.5, fontFamily: 'Space Mono, monospace', color: 'var(--muted)', letterSpacing: '0.08em' }}>
+          {k}{' '}
+          <span style={{ fontFamily: 'Orbitron, monospace', fontSize: 12, fontWeight: 700, color: agg ? accent : 'var(--muted)' }}>
+            {cell(v)}
+          </span>
+        </span>
+      ))}
+      <span style={{ fontSize: 9.5, fontFamily: 'Space Mono, monospace', color: 'var(--muted)' }}>
+        {agg?.games ? `${agg.games} G` : 'no games'}
+      </span>
+    </div>
+  );
+}
+
+function WnbaCourtLineupTab({ gameData }) {
+  const { gameInfo, nbaLineupData, injuries, awayRoster, homeRoster } = gameData || {};
+  const [data, setData] = React.useState(nbaLineupData);
+  const [tilt, setTilt] = React.useState(56);
+  const [focus, setFocus] = React.useState('both');   // 'both' | 'away' | 'home'
+  const [selId, setSelId] = React.useState(null);
+  const [refreshing, setRefreshing] = React.useState(false);
+  const refreshingRef = React.useRef(false);
+
+  React.useEffect(() => { setData(nbaLineupData); }, [nbaLineupData]);
+
+  const refresh = React.useCallback(async () => {
+    if (refreshingRef.current) return;
+    refreshingRef.current = true;
+    setRefreshing(true);
+    try {
+      const fresh = await buildWnbaLineupData(gameInfo, awayRoster, homeRoster, { refresh: true });
+      if (fresh) setData(fresh);
+    } catch (e) {
+      console.warn('WNBA lineup refresh failed:', e);
+    } finally {
+      refreshingRef.current = false;
+      setRefreshing(false);
+    }
+  }, [gameInfo, awayRoster, homeRoster]);
+
+  // ESPN only publishes real starters once the game tips, so poll harder
+  // while the five is still projected.
+  React.useEffect(() => {
+    const s = data?.lineupStatus;
+    const allConfirmed = s?.away === 'confirmed' && s?.home === 'confirmed';
+    const id = setInterval(refresh, allConfirmed ? 5 * 60 * 1000 : 60 * 1000);
+    return () => clearInterval(id);
+  }, [data?.lineupStatus?.away, data?.lineupStatus?.home, refresh]);
+
+  if (!data) {
+    if (gameData?._loading?.nbaLineupData !== false) return <TabLoader source="ESPN" label="Setting the floor..." rows={3} />;
+    return <div style={emptyMsg}>Lineup data unavailable.</div>;
+  }
+
+  const AWAY = '#00d4ff', HOME = '#ffd060';
+
+  // The builder hands us position matchups; the court needs them re-split
+  // per side, and the pairing kept so a tap can show the direct opponent.
+  const fives = { away: [], home: [] };
+  const opponentOf = new Map();
+  for (const m of data.matchups || []) {
+    if (m.away) fives.away.push({ ...m.away, slotLabel: m.position });
+    if (m.home) fives.home.push({ ...m.home, slotLabel: m.position });
+    if (m.away && m.home) {
+      opponentOf.set(String(m.away.id), { player: m.home, side: 'home', position: m.position });
+      opponentOf.set(String(m.home.id), { player: m.away, side: 'away', position: m.position });
+    }
+  }
+  const placed = { away: wctAssignSlots(fives.away), home: wctAssignSlots(fives.home) };
+
+  const selected = [...fives.away, ...fives.home].find(p => String(p.id) === String(selId)) || null;
+  const selSide = selected && fives.away.some(p => String(p.id) === String(selected.id)) ? 'away' : 'home';
+  const selAccent = selSide === 'away' ? AWAY : HOME;
+  const versus = selected ? opponentOf.get(String(selected.id)) : null;
+
+  const isLive = gameInfo.statusState === 'in';
+  const statusPill = (side, abbr, color) => {
+    const confirmed = data.lineupStatus?.[side] === 'confirmed';
+    return (
+      <span key={side} style={{ fontSize: 9.5, padding: '3px 9px', borderRadius: 2, fontFamily: 'Space Mono, monospace',
+        letterSpacing: '0.1em', color: confirmed ? '#00ff88' : color,
+        background: confirmed ? 'rgba(0,255,136,0.1)' : `${color}1a`,
+        border: `1px solid ${confirmed ? 'rgba(0,255,136,0.35)' : color + '59'}` }}>
+        {abbr} {confirmed ? '✓ CONFIRMED' : '◐ PROJECTED'}
+      </span>
+    );
+  };
+
+  const anyProjected = data.lineupStatus?.away !== 'confirmed' || data.lineupStatus?.home !== 'confirmed';
+  // Wrapper aspect tracks the tilt so the floor never gets clipped when the
+  // camera swings overhead, and never leaves a slab of dead space when flat.
+  const wrapRatio = (0.9 * Math.cos(tilt * Math.PI / 180) + 0.15).toFixed(3);
+
+  return (
+    <div style={{ padding: '20px 0' }}>
+      <NbaInjuryReport injuries={injuries}
+        awayAbbr={gameInfo.awayAbbr} homeAbbr={gameInfo.homeAbbr}
+        awayColor={AWAY} homeColor={HOME} />
+
+      <SectionHeader label="LINEUPS — COURT VIEW"
+        sub="Both fives placed where they play · tap a player for her splits and direct matchup" />
+
+      {/* Controls */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
+        <div style={{ display: 'flex', gap: 5 }}>
+          {[['both', 'BOTH', 'var(--cyan)'], ['away', gameInfo.awayAbbr, AWAY], ['home', gameInfo.homeAbbr, HOME]].map(([v, l, c]) => (
+            <button key={v} onClick={() => { setFocus(v); setSelId(null); }}
+              style={{ padding: '6px 14px', background: focus === v ? `${c}1f` : 'transparent',
+                border: `1px solid ${focus === v ? c + '73' : 'rgba(255,255,255,0.08)'}`,
+                color: focus === v ? c : 'var(--muted)',
+                fontFamily: 'Orbitron, monospace', fontWeight: 700, fontSize: 11, cursor: 'pointer',
+                borderRadius: 2, letterSpacing: '0.1em' }}>{l}</button>
+          ))}
+        </div>
+        {isLive && (
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 9.5, padding: '3px 9px', borderRadius: 2,
+            fontFamily: 'Space Mono, monospace', letterSpacing: '0.12em', color: '#00ff88',
+            background: 'rgba(0,255,136,0.1)', border: '1px solid rgba(0,255,136,0.4)' }}>
+            <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#00ff88',
+              boxShadow: '0 0 6px #00ff88', animation: 'livePulse 1.6s ease-in-out infinite' }} />
+            ON THE COURT NOW
+          </span>
+        )}
+        {statusPill('away', gameInfo.awayAbbr, AWAY)}
+        {statusPill('home', gameInfo.homeAbbr, HOME)}
+        <button onClick={refresh} disabled={refreshing}
+          style={{ padding: '3px 10px', background: 'transparent', border: '1px solid rgba(255,255,255,0.1)',
+            color: refreshing ? 'var(--muted)' : 'var(--cyan)', fontFamily: 'Space Mono, monospace',
+            fontSize: 9.5, cursor: refreshing ? 'default' : 'pointer', borderRadius: 2, letterSpacing: '0.1em' }}>
+          {refreshing ? '· SYNCING' : '↻ REFRESH'}
+        </button>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 4, alignItems: 'center' }}>
+          <span style={{ fontSize: 9.5, color: 'var(--muted)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.14em' }}>CAMERA</span>
+          {WCT_TILTS.map(([l, deg]) => (
+            <button key={l} onClick={() => setTilt(deg)}
+              style={{ padding: '4px 9px', background: tilt === deg ? 'rgba(0,212,255,0.1)' : 'transparent',
+                border: `1px solid ${tilt === deg ? 'rgba(0,212,255,0.35)' : 'rgba(255,255,255,0.07)'}`,
+                color: tilt === deg ? 'var(--cyan)' : 'var(--muted)', fontFamily: 'Space Mono, monospace',
+                fontSize: 9.5, cursor: 'pointer', borderRadius: 2, letterSpacing: '0.08em' }}>{l}</button>
+          ))}
+        </div>
+      </div>
+
+      {anyProjected && (
+        <div style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'Space Mono, monospace', marginBottom: 10, lineHeight: 1.6 }}>
+          The WNBA has no pre-game starter feed, so a projected five is the top five by season minutes. It flips to
+          confirmed automatically once ESPN's box score opens at tip-off.
+        </div>
+      )}
+
+      {/* ── The floor ── */}
+      <div style={{ maxWidth: 780, margin: '0 auto 18px', perspective: '1200px', perspectiveOrigin: '50% 42%',
+        position: 'relative', aspectRatio: `1 / ${wrapRatio}`,
+        transition: 'aspect-ratio 0.5s cubic-bezier(0.16,1,0.3,1)' }}>
+        <div style={{ position: 'absolute', left: 0, top: '50%', width: '100%', aspectRatio: '1 / 1',
+          transform: `translateY(-50%) rotateX(${tilt}deg)`, transformOrigin: 'center center',
+          transformStyle: 'preserve-3d', transition: 'transform 0.5s cubic-bezier(0.16,1,0.3,1)' }}>
+          <svg viewBox="0 0 100 100" preserveAspectRatio="none"
+            style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}>
+            <defs>
+              <linearGradient id="piqWood" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#5a3d21" /><stop offset="50%" stopColor="#6b4a28" /><stop offset="100%" stopColor="#432d18" />
+              </linearGradient>
+              <radialGradient id="piqArena" cx="50%" cy="12%" r="82%">
+                <stop offset="0%" stopColor="#ffffff" stopOpacity="0.10" />
+                <stop offset="45%" stopColor="#ffffff" stopOpacity="0.025" />
+                <stop offset="100%" stopColor="#000000" stopOpacity="0.44" />
+              </radialGradient>
+              <clipPath id="piqCourt">
+                <rect x={WCT.x0} y={WCT.y0} width={WCT.x1 - WCT.x0} height={WCT.y1 - WCT.y0} />
+              </clipPath>
+            </defs>
+
+            {/* arena floor surrounding the court */}
+            <rect x="0" y="0" width="100" height="100" fill="#080d14" />
+            <rect x="2" y="1" width="96" height="98" fill="#0c1520" />
+
+            {/* hardwood + planks */}
+            <rect x={WCT.x0} y={WCT.y0} width={WCT.x1 - WCT.x0} height={WCT.y1 - WCT.y0} fill="url(#piqWood)" />
+            <g clipPath="url(#piqCourt)">
+              {Array.from({ length: 28 }, (_, i) => (
+                <rect key={i} x={WCT.x0 + i * 3} y={WCT.y0} width="1.5" height={WCT.y1 - WCT.y0}
+                  fill="#ffffff" opacity={i % 2 ? 0.028 : 0} />
+              ))}
+              {/* each team owns a half — the fastest read of who is where */}
+              <rect x={WCT.x0} y={WCT.y0} width={WCT.x1 - WCT.x0} height={50 - WCT.y0} fill={AWAY} opacity="0.07" />
+              <rect x={WCT.x0} y="50" width={WCT.x1 - WCT.x0} height={WCT.y1 - 50} fill={HOME} opacity="0.07" />
+              {/* team marks painted on the floor */}
+              {gameInfo.awayLogo && <image href={gameInfo.awayLogo} x="40" y="20" width="20" height="20" opacity="0.13" preserveAspectRatio="xMidYMid meet" />}
+              {gameInfo.homeLogo && <image href={gameInfo.homeLogo} x="40" y="61" width="20" height="20" opacity="0.13" preserveAspectRatio="xMidYMid meet" />}
+            </g>
+
+            {/* markings */}
+            <rect x={WCT.x0} y={WCT.y0} width={WCT.x1 - WCT.x0} height={WCT.y1 - WCT.y0}
+              fill="none" stroke="rgba(233,242,252,0.42)" strokeWidth="0.6" />
+            <path d={`M ${WCT.x0},50 L ${WCT.x1},50`} stroke="rgba(233,242,252,0.35)" strokeWidth="0.5" />
+            <ellipse cx={WCT.cx} cy="50" rx={6 * WCT_X} ry={6 * WCT_Y}
+              fill="none" stroke="rgba(233,242,252,0.35)" strokeWidth="0.5" />
+            <WnbaCourtEnd end="far" accent={AWAY} />
+            <WnbaCourtEnd end="near" accent={HOME} />
+
+            {/* arena lighting + vignette */}
+            <rect x="0" y="0" width="100" height="100" fill="url(#piqArena)" />
+          </svg>
+
+          {['away', 'home'].map(side => {
+            const lit = focus === 'both' || focus === side;
+            return (
+              // A dimmed team is background context, so it stops taking clicks —
+              // otherwise you can select a player you can barely see.
+              <div key={side} style={{ position: 'absolute', inset: 0, transformStyle: 'preserve-3d',
+                opacity: lit ? 1 : 0.28, pointerEvents: lit ? 'auto' : 'none',
+                transition: 'opacity 0.3s' }}>
+                {placed[side].map((entry, i) => (
+                  <WnbaCourtCard key={`${side}-${entry.slot.key}`} entry={entry} side={side}
+                    accent={side === 'away' ? AWAY : HOME} tilt={tilt}
+                    selId={lit ? selId : null}
+                    onSelect={setSelId} idx={i + (side === 'away' ? 0 : 5)} />
+                ))}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Tapped player — her splits, plus who she lines up against */}
+      {selected && (
+        <HudCard style={{ padding: '12px 16px', marginBottom: 16 }} accent={selAccent}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 10 }}>
+            <span style={{ fontSize: 13, fontFamily: 'Space Mono, monospace', color: 'var(--text)', fontWeight: 700 }}>{selected.name}</span>
+            <span style={{ fontSize: 9.5, padding: '2px 7px', border: `1px solid ${selAccent}66`, color: selAccent, fontFamily: 'Space Mono, monospace', borderRadius: 2 }}>
+              {selected.slotLabel}{selected.jersey && selected.jersey !== '—' ? ` · #${selected.jersey}` : ''}
+            </span>
+            {versus && (
+              <span style={{ marginLeft: 'auto', fontSize: 9.5, fontFamily: 'Space Mono, monospace', color: 'var(--muted)', letterSpacing: '0.08em' }}>
+                MATCHED ON{' '}
+                <span style={{ color: versus.side === 'away' ? AWAY : HOME, fontWeight: 700 }}>{versus.player.name}</span>
+                {versus.player.season?.pts != null && ` · ${versus.player.season.pts.toFixed(1)} PPG`}
+              </span>
+            )}
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <WnbaSplitRow label="SEASON" agg={selected.season} accent={selAccent} />
+            <WnbaSplitRow label="LAST 5" agg={selected.l5} accent={selAccent} />
+            <WnbaSplitRow label={`vs ${selSide === 'away' ? gameInfo.homeAbbr : gameInfo.awayAbbr}`} agg={selected.h2h} accent={selAccent} />
+          </div>
+        </HudCard>
+      )}
+
+      {/* The floor shows position, not pairing — so keep the matchup list */}
+      <div style={{ fontSize: 9.5, color: 'var(--muted)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.18em', marginBottom: 8 }}>
+        POSITION MATCHUPS
+      </div>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+        {(data.matchups || []).map(m => {
+          const hot = [m.away, m.home].some(p => p && String(p.id) === String(selId));
+          return (
+            <div key={m.position}
+              style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', borderRadius: 2,
+                background: hot ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.02)',
+                border: `1px solid ${hot ? 'rgba(255,255,255,0.16)' : 'rgba(255,255,255,0.06)'}` }}>
+              <span onClick={() => m.away && setSelId(String(m.away.id))}
+                style={{ fontFamily: 'Space Mono, monospace', fontSize: 10, color: AWAY, cursor: m.away ? 'pointer' : 'default' }}>
+                {m.away ? wctLast(m.away.name) : '—'}
+              </span>
+              <span style={{ fontFamily: 'Orbitron, monospace', fontSize: 9.5, fontWeight: 900, color: 'var(--muted)', letterSpacing: '0.1em' }}>
+                {m.position}
+              </span>
+              <span onClick={() => m.home && setSelId(String(m.home.id))}
+                style={{ fontFamily: 'Space Mono, monospace', fontSize: 10, color: HOME, cursor: m.home ? 'pointer' : 'default' }}>
+                {m.home ? wctLast(m.home.name) : '—'}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+Object.assign(window, { NbaEdgeFinderTab, NbaLineupTab, NbaDefenseVsPositionTab, WnbaCourtLineupTab });

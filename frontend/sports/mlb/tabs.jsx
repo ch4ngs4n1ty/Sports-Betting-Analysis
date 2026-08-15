@@ -3,6 +3,151 @@
    MLB-only game-detail tabs and chart helpers
    ============================================================ */
 
+/* ── MLB LOADING SEQUENCE ────────────────────────────────
+   Heavy MLB tabs (Edge Finder, Pitching, Low HR, High Contact, Lineup)
+   wait on Savant/MLB-Stats round trips that can run many seconds. Instead
+   of a static skeleton we show a pitch loop with a progress bar, and when
+   the data lands the bat connects and the ball leaves the park.
+
+   Keyframes are injected at runtime (scoped `piq*` names) rather than added
+   to index.html, so this file stays self-contained. */
+
+const MLB_LOADER_CSS = `
+@keyframes piqPitch {
+  0%   { transform: translate(232px, -34px) scale(0.55); opacity: 0; }
+  14%  { opacity: 1; }
+  100% { transform: translate(0px, 0px) scale(1); opacity: 1; }
+}
+@keyframes piqBatIdle {
+  0%,100% { transform: rotate(-30deg); }
+  50%     { transform: rotate(-22deg); }
+}
+@keyframes piqBatSwing {
+  0%   { transform: rotate(-28deg); }
+  38%  { transform: rotate(62deg); }
+  100% { transform: rotate(44deg); }
+}
+@keyframes piqHomerX { from { transform: translateX(0); }   to { transform: translateX(246px); } }
+@keyframes piqHomerY { from { transform: translateY(0); }   to { transform: translateY(-70px); } }
+@keyframes piqCrack  { 0% { opacity: 0; transform: scale(0.5); } 30% { opacity: 1; transform: scale(1.2); } 100% { opacity: 0; transform: scale(1.6); } }
+@keyframes piqHrText { 0% { opacity: 0; transform: translateY(6px); } 40% { opacity: 1; transform: translateY(0); } 100% { opacity: 1; transform: translateY(0); } }
+`;
+if (typeof document !== 'undefined' && !document.getElementById('piq-mlb-loader-css')) {
+  const _s = document.createElement('style');
+  _s.id = 'piq-mlb-loader-css';
+  _s.textContent = MLB_LOADER_CSS;
+  document.head.appendChild(_s);
+}
+
+// Ticks while `active`, so the bar can advance on real elapsed time.
+function useMlbElapsed(active) {
+  const [ms, setMs] = React.useState(0);
+  React.useEffect(() => {
+    if (!active) return;
+    const t0 = Date.now();
+    const id = setInterval(() => setMs(Date.now() - t0), 120);
+    return () => clearInterval(id);
+  }, [active]);
+  return ms;
+}
+
+/* Gate a tab's render on the load sequence.
+   'loading' → pitch loop · 'hit' → home-run beat · 'ready' → show content.
+   The home-run beat only plays when data actually arrived, so a failed
+   fetch falls straight through to the tab's own empty state. */
+function useMlbLoadGate(isLoading, hasData) {
+  const [phase, setPhase] = React.useState(isLoading ? 'loading' : 'ready');
+  React.useEffect(() => {
+    if (isLoading) { setPhase('loading'); return; }
+    let celebrated = false;
+    setPhase(p => { if (p === 'loading' && hasData) { celebrated = true; return 'hit'; } return 'ready'; });
+    if (!celebrated) return;
+    const t = setTimeout(() => setPhase('ready'), 1150);
+    return () => clearTimeout(t);
+  }, [isLoading, hasData]);
+  return phase;
+}
+
+function MlbDataLoader({ phase, source, label }) {
+  const hit = phase === 'hit';
+  const ms = useMlbElapsed(!hit);
+  // Asymptotic estimate — never claims 100% until the data is actually in.
+  const pct = hit ? 100 : Math.min(94, Math.round(100 * (1 - Math.exp(-ms / 7000))));
+  const secs = (ms / 1000).toFixed(1);
+  const barColor = hit ? '#00ff88' : 'var(--cyan)';
+
+  return (
+    <div style={{ padding: '30px 0 24px', animation: 'fadeUp 0.3s ease' }}>
+      <div style={{ maxWidth: 460, margin: '0 auto' }}>
+        <svg viewBox="0 0 320 120" style={{ width: '100%', height: 'auto', display: 'block' }}>
+          <defs>
+            <linearGradient id="piqLoadGrass" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#12402a" /><stop offset="100%" stopColor="#08200f" />
+            </linearGradient>
+          </defs>
+          {/* ground + outfield wall */}
+          <path d="M 0,96 L 320,96 L 320,120 L 0,120 Z" fill="url(#piqLoadGrass)" opacity="0.5" />
+          <line x1="0" y1="96" x2="320" y2="96" stroke="var(--cyan)" strokeWidth="1" opacity="0.35" />
+          <line x1="292" y1="96" x2="292" y2="54" stroke="var(--cyan)" strokeWidth="2" opacity={hit ? 0.85 : 0.4} />
+          <line x1="284" y1="54" x2="300" y2="54" stroke="var(--cyan)" strokeWidth="2" opacity={hit ? 0.85 : 0.4} />
+          {/* home plate */}
+          <polygon points="40,96 56,96 56,91 48,87 40,91" fill="#eef4fa" opacity="0.85" />
+
+          {/* bat — pivots at the handle */}
+          <g style={{ transformBox: 'fill-box', transformOrigin: '50% 100%',
+            animation: hit ? 'piqBatSwing 0.5s cubic-bezier(0.2,0.9,0.3,1) forwards' : 'piqBatIdle 1.6s ease-in-out infinite' }}>
+            <rect x="44" y="52" width="6" height="42" rx="3" fill="#c9a227" />
+            <rect x="44.5" y="84" width="5" height="10" rx="2.5" fill="#8a6f1c" />
+          </g>
+
+          {/* contact flash */}
+          {hit && (
+            <g style={{ animation: 'piqCrack 0.45s ease-out forwards', transformBox: 'fill-box', transformOrigin: 'center' }}>
+              <circle cx="64" cy="66" r="13" fill="none" stroke="#ffd060" strokeWidth="2.5" />
+            </g>
+          )}
+
+          {/* ball — loops in on the pitch, launches out on contact */}
+          <g style={{ animation: hit ? 'piqHomerX 1.05s cubic-bezier(0.25,0.6,0.4,1) forwards' : 'none' }}>
+            <g style={{ animation: hit ? 'piqHomerY 1.05s cubic-bezier(0.15,0.9,0.5,1) forwards' : 'piqPitch 1.25s linear infinite' }}>
+              <g transform="translate(64,66)">
+                <circle r="7" fill="#f4f8fc" />
+                <path d="M -3.4,-5.6 A 7,7 0 0 0 -3.4,5.6" fill="none" stroke="#d0555a" strokeWidth="1.1" />
+                <path d="M 3.4,-5.6 A 7,7 0 0 1 3.4,5.6" fill="none" stroke="#d0555a" strokeWidth="1.1" />
+              </g>
+            </g>
+          </g>
+
+          {hit && (
+            <text x="196" y="34" textAnchor="middle" fill="#00ff88" fontFamily="Orbitron, monospace"
+              fontSize="17" fontWeight="900" letterSpacing="2.5"
+              style={{ animation: 'piqHrText 0.5s ease-out 0.28s backwards' }}>HOME RUN</text>
+          )}
+        </svg>
+
+        {/* progress */}
+        <div style={{ marginTop: 14 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
+            <span style={{ fontSize: 10, fontFamily: 'Space Mono, monospace', color: hit ? '#00ff88' : 'var(--cyan)', letterSpacing: '0.18em' }}>
+              {hit ? 'DATA IN — PLAY BALL' : `FETCHING FROM ${String(source || 'MLB').toUpperCase()}`}
+            </span>
+            <span style={{ fontSize: 15, fontFamily: 'Orbitron, monospace', fontWeight: 900, color: barColor }}>{pct}%</span>
+          </div>
+          <div style={{ height: 7, background: 'rgba(255,255,255,0.06)', borderRadius: 4, overflow: 'hidden' }}>
+            <div style={{ height: '100%', width: `${pct}%`, background: barColor,
+              boxShadow: `0 0 10px ${hit ? '#00ff88' : 'var(--cyan)'}`, borderRadius: 4,
+              transition: 'width 0.35s cubic-bezier(0.16,1,0.3,1), background 0.3s' }} />
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6 }}>
+            <span style={{ fontSize: 10, fontFamily: 'Space Mono, monospace', color: 'var(--muted)' }}>{label || 'Loading…'}</span>
+            <span style={{ fontSize: 10, fontFamily: 'Space Mono, monospace', color: 'var(--muted)' }}>{secs}s</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const L5_STATS = [
   { key: 'hits', label: 'H' },
   { key: 'hr', label: 'HR' },
@@ -55,10 +200,9 @@ function EdgeFinderTab({ gameData }) {
   const [propLine, setPropLine] = React.useState(0.5);
   const selectPropStat = s => { setPropStat(s); setPropLine(MLB_PROP_LINES[s][0]); };
 
-  if (!mlbEdgeData) {
-    if (gameData?._loading?.mlbEdgeData !== false) return <TabLoader source="Savant" label="Fetching BvP from Baseball Savant..." rows={5} />;
-    return <div style={emptyMsg}>Edge data unavailable — lineups may not be posted yet.</div>;
-  }
+  const loadPhase = useMlbLoadGate(gameData?._loading?.mlbEdgeData !== false, !!mlbEdgeData);
+  if (loadPhase !== 'ready') return <MlbDataLoader phase={loadPhase} source="Baseball Savant" label="Pulling batter-vs-pitcher history…" />;
+  if (!mlbEdgeData) return <div style={emptyMsg}>Edge data unavailable — lineups may not be posted yet.</div>;
 
   const { batters, bvpStatus } = mlbEdgeData;
   const displayed = filter === 'edges' ? batters.filter(b => b.edgeStats && b.bvp?.ops >= 0.700) : batters;
@@ -329,10 +473,9 @@ function PitchingEdgeTab({ gameData }) {
   const [pStat, setPStat] = React.useState('k');
   const [pLine, setPLine] = React.useState(4.5);
 
-  if (!pitchingData) {
-    if (gameData?._loading?.pitchingData !== false) return <TabLoader source="Stats" label="Loading probable pitchers..." rows={2} />;
-    return <div style={emptyMsg}>Pitching data unavailable.</div>;
-  }
+  const loadPhase = useMlbLoadGate(gameData?._loading?.pitchingData !== false, !!pitchingData);
+  if (loadPhase !== 'ready') return <MlbDataLoader phase={loadPhase} source="MLB Stats API" label="Loading probable pitchers…" />;
+  if (!pitchingData) return <div style={emptyMsg}>Pitching data unavailable.</div>;
   const { pitchers } = pitchingData;
   const fv = (v, d = 2) => v != null ? Number(v).toFixed(d) : '—';
 
@@ -603,10 +746,9 @@ function PitchingEdgeTab({ gameData }) {
    team-vs-hand splits, bullpen, weather, and a verified-data row. */
 function HighContactTab({ gameData }) {
   const { gameInfo, highContactData } = gameData;
-  if (!highContactData) {
-    if (gameData?._loading?.highContactData !== false) return <TabLoader source="MLB Stats + Savant" label="Computing hit-risk..." rows={2} />;
-    return <div style={emptyMsg}>High-contact report unavailable.</div>;
-  }
+  const loadPhase = useMlbLoadGate(gameData?._loading?.highContactData !== false, !!highContactData);
+  if (loadPhase !== 'ready') return <MlbDataLoader phase={loadPhase} source="MLB Stats + Savant" label="Scoring hit-risk across six signals…" />;
+  if (!highContactData) return <div style={emptyMsg}>High-contact report unavailable.</div>;
 
   const SUB_LABELS = {
     pitcherTraffic: 'PITCHER TRAFFIC',
@@ -1030,10 +1172,9 @@ function LowHrModelTab({ gameData }) {
   const { gameInfo, lowHrData } = gameData;
   const [filter, setFilter] = React.useState('all');
 
-  if (!lowHrData) {
-    if (gameData?._loading?.lowHrData !== false) return <TabLoader source="Savant" label="Scoring Under 0.5 HR candidates..." rows={5} />;
-    return <div style={emptyMsg}>Low HR model unavailable — lineups may not be posted yet.</div>;
-  }
+  const loadPhase = useMlbLoadGate(gameData?._loading?.lowHrData !== false, !!lowHrData);
+  if (loadPhase !== 'ready') return <MlbDataLoader phase={loadPhase} source="Baseball Savant" label="Scoring Under 0.5 HR candidates…" />;
+  if (!lowHrData) return <div style={emptyMsg}>Low HR model unavailable — lineups may not be posted yet.</div>;
 
   const { park, weather, windFlag, pitchers, candidates = [], slip = [], leagueAvgHr9 } = lowHrData;
 
@@ -1356,10 +1497,9 @@ function MlbLineupFieldTab({ gameData }) {
   const [tilt, setTilt] = React.useState(58);
   const [selId, setSelId] = React.useState(null);
 
-  if (!mlbLineups) {
-    if (gameData?._loading?.mlbLineups !== false) return <TabLoader source="MLB Stats" label="Loading lineup card..." rows={3} />;
-    return <div style={emptyMsg}>Lineup data unavailable.</div>;
-  }
+  const loadPhase = useMlbLoadGate(gameData?._loading?.mlbLineups !== false, !!mlbLineups);
+  if (loadPhase !== 'ready') return <MlbDataLoader phase={loadPhase} source="MLB Stats API" label="Loading the lineup card…" />;
+  if (!mlbLineups) return <div style={emptyMsg}>Lineup data unavailable.</div>;
 
   const team = mlbLineups[side] || {};
   const lineup = team.lineup || [];
@@ -1679,4 +1819,4 @@ function MlbLineupFieldTab({ gameData }) {
   );
 }
 
-Object.assign(window, { EdgeFinderTab, PitchingEdgeTab, HighContactTab, LowHrModelTab, MlbLineupFieldTab });
+Object.assign(window, { EdgeFinderTab, PitchingEdgeTab, HighContactTab, LowHrModelTab, MlbLineupFieldTab, MlbDataLoader, useMlbLoadGate });

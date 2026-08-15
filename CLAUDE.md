@@ -16,7 +16,7 @@ playiq/
 │   │   ├── shared/core.js                      — ESPN helpers, SPORTS_CONFIG, fetchAllGames, fetchTeamForm, fetchH2H, fetchInjuries, fetchRoster, Claude API, AI plays
 │   │   ├── mlb/index.js                        — MLB-only helpers: fetchGameBvp, fetchHighContactReport, fetchWeather, fetchMlbStarters, fetchPlayerGameLog, buildMlbEdgeData
 │   │   ├── nba/index.js                        — NBA-only helpers: fetchHoopsPlayerGameLog (shared w/ WNBA), buildNbaEdgeData (incl. per-player `proj` distribution), lineup + positional-defense fetchers, threshold projection model (nbaThresholdProbability + buckets)
-│   │   └── wnba/index.js                       — WNBA: buildWnbaEdgeData + buildWnbaLineupData (starters from ESPN boxscore once live; top-5-by-minutes projection pre-game). Reuses the basketball gamelog parser + the (sport-agnostic) threshold model; NO Rotowire lineups / defense-vs-position (NBA-only backends), so boards run without a matchup adjustment. `NbaLineupTab`/`NbaEdgeFinderTab` are reused for WNBA (gated on `gameInfo.sportKey === 'wnba'`)
+│   │   └── wnba/index.js                       — WNBA: buildWnbaEdgeData + buildWnbaLineupData (starters from ESPN boxscore once live; top-5-by-minutes projection pre-game). Reuses the basketball gamelog parser + the (sport-agnostic) threshold model; NO Rotowire lineups / defense-vs-position (NBA-only backends), so boards run without a matchup adjustment. `NbaEdgeFinderTab` is reused for WNBA (gated on `gameInfo.sportKey === 'wnba'`); the LINEUPS tab instead dispatches to `WnbaCourtLineupTab` (3D court view) rather than `NbaLineupTab`
 │   ├── shared/
 │   │   ├── ui-atoms.jsx                        — Primitive UI components (HudCard, PlayerCard, Sparkline, OpsGauge, WeatherPill, TabLoader, etc.)
 │   │   ├── tabs/common-tabs.jsx                — Sport-agnostic tabs: OverviewTab, H2HTab, FormTab, RosterTab, AIPlaysTab
@@ -26,7 +26,7 @@ playiq/
 │   │       └── game-detail-screen.jsx          — GameDetailScreen + TABS_MLB / TABS_NBA / TABS_OTHER + Phase 1 / Phase 2 loading
 │   └── sports/
 │       ├── mlb/tabs.jsx                        — MLB-specific tabs: EdgeFinderTab (incl. PROP PROJECTION MODEL board: transparent Log5 P(Hits/RBI/K≥line)), PitchingEdgeTab (incl. PITCHER PROJECTION MODEL board: P(K/Outs/ER/HR≥line) + per-start bar charts), MlbLineupFieldTab (3D CSS-perspective diamond: each starter's card at their fielding position; field rotateX + cards counter-rotated so text stays crisp — no WebGL), LowHrModelTab, HighContactTab
-│       └── nba/tabs.jsx                        — NBA-specific tabs: NbaEdgeFinderTab (incl. PROJECTION MODEL board: P(stat≥line) per player), NbaLineupTab, NbaDefenseVsPositionTab
+│       └── nba/tabs.jsx                        — NBA-specific tabs: NbaEdgeFinderTab (incl. PROJECTION MODEL board: P(stat≥line) per player), NbaLineupTab, NbaDefenseVsPositionTab, WnbaCourtLineupTab (WNBA LINEUPS tab: 3D CSS-perspective court, both fives placed at the spot they play — court plane rotateX + cards counter-rotated so text stays crisp, no WebGL; same technique as `MlbLineupFieldTab`. Slots are resolved interior-first with a G/F/C preference chain, because WNBA positions are coarse and small-ball fives would otherwise strand a guard at the rim)
 ├── manifest.json                               — PWA manifest
 ├── icon.svg                                    — PWA icon
 ├── server/

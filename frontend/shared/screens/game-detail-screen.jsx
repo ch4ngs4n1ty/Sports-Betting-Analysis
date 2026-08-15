@@ -35,7 +35,7 @@ const TABS_WNBA = [
   { id: 'h2h', label: 'HEAD-TO-HEAD' },
   { id: 'form', label: 'LAST 5' },
   { id: 'roster', label: 'ROSTERS' },
-  { id: 'lineups', label: 'LINEUPS' },
+  { id: 'lineups', label: '⬢ LINEUPS' },
   { id: 'edges', label: 'EDGE FINDER' },
   { id: 'ai', label: '◆ AI PLAYS' },
 ];
@@ -242,7 +242,9 @@ function GameDetailScreen({ game, onBack }) {
             {tab === 'form' && <FormTab gameData={gameData} />}
             {tab === 'roster' && <RosterTab gameData={gameData} />}
             {tab === 'lineup' && <MlbLineupFieldTab gameData={gameData} />}
-            {tab === 'lineups' && <NbaLineupTab gameData={gameData} />}
+            {tab === 'lineups' && (game.sportKey === 'wnba'
+              ? <WnbaCourtLineupTab gameData={gameData} />
+              : <NbaLineupTab gameData={gameData} />)}
             {tab === 'def-vs-pos' && <NbaDefenseVsPositionTab gameData={gameData} />}
             {tab === 'edges' && ((game.sportKey === 'nba' || game.sportKey === 'wnba')
               ? <NbaEdgeFinderTab gameData={gameData} />
